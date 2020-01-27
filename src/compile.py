@@ -166,13 +166,14 @@ def compiler_test(test_name="factorial"):
     cur_module.ast = ast
 
     program = Program()
+    program.search_paths = search_paths
     program.modules["__main__"] = cur_module
     program.modules[cur_module.abs_name] = cur_module
 
-    build_code_graph(program, cur_module, search_paths)
+    build_code_graph(program, cur_module)
     return
 
-    cpp_code = ast_to_cpp(ast, cur_module_name_list, source_path, search_paths)
+    cpp_code = ast_to_cpp(ast, cur_module_name_list, source_path)
     print("\n\n=== CPP code ===\n", cpp_code)
 
     if os.path.isdir(build_dir):

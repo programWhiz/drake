@@ -8,7 +8,7 @@ def init_code_program(ast):
     program.modules['__main__'] = Module(ast)
 
 
-def compile_module_cached(program, abs_name, abs_path, search_paths):
+def compile_module_cached(program, abs_name, abs_path):
     from src.compile import compile_file, get_compile_target_file
 
     if abs_name in program.modules:
@@ -17,7 +17,7 @@ def compile_module_cached(program, abs_name, abs_path, search_paths):
     if '.' in abs_name:
         parent_name = abs_name.rsplit('.', 1)[0]
         parent_path = str(Path(abs_path).parent)
-        compile_module_cached(program, parent_name, parent_path, search_paths)
+        compile_module_cached(program, parent_name, parent_path)
 
     abs_path = get_compile_target_file(abs_path)
 
@@ -27,21 +27,22 @@ def compile_module_cached(program, abs_name, abs_path, search_paths):
         abs_path=abs_path)
 
     program.modules[abs_name] = module
-    build_code_graph(program, module, search_paths)
+    build_code_graph(program, module)
 
     return module
 
 
-def build_code_graph(program, module, search_paths):
-    imports = fill_module_paths(module.ast, module.abs_name.split('.'), module.abs_path, search_paths)
+def build_code_graph(program, module):
+    imports = fill_module_paths(module.ast, module.abs_name.split('.'), module.abs_path, program.search_paths)
 
     for im in imports:
         module.vars[im.module.name] = compile_module_cached(program=program,
-            abs_name=im.module.abs_name, abs_path=im.module.abs_path, search_paths=search_paths)
+            abs_name=im.module.abs_name, abs_path=im.module.abs_path)
 
 
 class Program:
     def __init__(self):
+        self.search_paths = []
         self.modules = {}
 
 
