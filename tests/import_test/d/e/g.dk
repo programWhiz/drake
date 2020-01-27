@@ -1,0 +1,6 @@
+class g1:
+    pass
+
+class g2:
+    def foo(self):
+        pass

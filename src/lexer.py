@@ -1,5 +1,3 @@
-import re
-
 from rply import LexerGenerator
 
 gen = LexerGenerator()
@@ -11,7 +9,7 @@ gen.add("STR_TRIPLE_DOUBLE", r'[rf]?"""[^"\\]*(?:(?:\\.|"(?!""))[^"\\]*)*"""')
 gen.add("STR_SINGLE_SINGLE", r"[rf]?'[^'\\]*(?:\\.[^'\\]*)*'")
 gen.add("STR_SINGLE_DOUBLE", r'[rf]?"[^"\\]*(?:\\.[^"\\]*)*"')
 
-gen.add("FLOAT", r"\-?(((\d*\.\d+)|(\d+\.\d*))([eE]\-?((\d*\.\d+)|(\d+\.\d*)|(\d+)))?)|(\d+([eE]\-?((\d*\.\d+)|(\d+\.\d*)|(\d+))))")
+gen.add("FLOAT", r"\-?((\d*\.\d+)|(\d+\.\d*))([eE]\-?\d[\d_]*)?")
 gen.add("INTEGER", r"\-?\d[\d_]*")
 gen.add("HEX_INT", r'0[xX](?:_?[0-9a-fA-F])+')
 gen.add("BIN_INT", r'0[bB](?:_?[01])+')
@@ -26,6 +24,8 @@ gen.add("OR", "or")
 gen.add("IF", "if")
 gen.add("ELSE", "else")
 gen.add("ELIF", "elif")
+gen.add("IMPORT", "import")
+gen.add("FROM", "from")
 gen.add("RETURN", "return")
 gen.add("YIELD", "return")
 gen.add("BREAK", "break")

@@ -1,14 +1,31 @@
 import os
 import re
-import tempfile
+import shutil
 from typing import List
-
 from rply import ParsingError, Token, LexingError
 from rply.token import SourcePosition
-
+from src.code_graph import Program, Module, build_code_graph
 from src.cpp import ast_to_cpp
 from src.lexer import lexer
 from src.parser import parser, print_ast_debug
+
+
+def compile_file(path:str):
+    with open(path, 'rt') as fptr:
+        source = fptr.read()
+    return compile_source(source)
+
+
+def get_compile_target_file(path:str) -> str:
+    if os.path.isfile(path):
+        return path
+
+    if os.path.isdir(path):
+        init_file = os.path.join(path, "__init__.dk")
+        if not os.path.isfile(init_file):
+            raise Exception(f"Missing __init__.dk file for directory {path}")
+
+        return init_file
 
 
 def compile_source(source:str):
@@ -18,7 +35,7 @@ def compile_source(source:str):
         tokens = list(lexer.lex(source))
     except LexingError as e:
         print_lexing_error(source, e)
-        return
+        raise
 
     tokens = indent_tokens(tokens)
     print_tokens(tokens)
@@ -27,6 +44,7 @@ def compile_source(source:str):
         return parser.parse(iter(tokens))
     except ParsingError as e:
         print_parsing_error(source, e)
+        raise
 
 
 def clean_source(source:str) -> str:
@@ -68,8 +86,8 @@ def print_code_position_marker(source:str, pos:SourcePosition, scope:int=4):
 def indent_tokens(tokens:List[Token]) -> List[Token]:
     # Figure out the indent / dedents
     prev_token = None
-    prev_indent, indent = 0, 0
-    indent_depth = 0
+    indent_stack = []
+    indent = 0, 0
     indented_tokens = []
     for token in tokens:
         # Treat semicolon like a newline
@@ -88,22 +106,22 @@ def indent_tokens(tokens:List[Token]) -> List[Token]:
             indent = token.source_pos.colno
             if token.name == "SPACE":
                 indent += len(token.value)
+            else:
+                indent -= 1
 
-            if indent > prev_indent:
+            if indent > 0 and (not indent_stack or indent > indent_stack[-1]):
                 indented_tokens.append(Token(
                     name="INDENT",
                     value=" ",
                     source_pos=token.source_pos))
-                prev_indent = indent
-                indent_depth += 1
+                indent_stack.append(indent)
 
-            elif indent < prev_indent:
+            while indent_stack and indent < indent_stack[-1]:
                 indented_tokens.append(Token(
                     name="DEDENT",
                     value=" ",
                     source_pos=token.source_pos))
-                prev_indent = indent
-                indent_depth -= 1
+                indent_stack.pop()
 
             # else, indent is unchanged
 
@@ -114,7 +132,7 @@ def indent_tokens(tokens:List[Token]) -> List[Token]:
         prev_token = token
 
     # At end of file, dedent to outermost level
-    for i in range(indent_depth):
+    for _ in indent_stack:
         indented_tokens.append(Token("DEDENT", "", source_pos=tokens[-1].source_pos))
 
     return indented_tokens
@@ -127,35 +145,48 @@ def print_tokens(tokens:List[Token]):
     print("\n")
 
 
-if __name__ == '__main__':
-    source = """
-a = 3
-b = 4
-c = a + b
-    """
-    ast = compile_source(source)
-    if ast is not None:
-        print("AST Tree:")
-        print_ast_debug(ast)
+def compiler_test(test_name="factorial"):
+    tests_dir = os.path.join(os.path.dirname(__file__), "..", "tests")
+    source_dir = os.path.join(tests_dir, test_name)
+    source_path = os.path.join(source_dir, 'main.dk')
+    build_dir = os.path.join(source_dir, "build")
+    binary_path = os.path.join(build_dir, f"{test_name}.out")
+    cpp_path = os.path.join(build_dir, "main.cpp")
 
-    cpp_code = ast_to_cpp(ast)
+    ast = compile_file(source_path)
+    print_ast_debug(ast)
+
+    search_paths = [ source_dir ]
+    cur_module_name_list = [ "tests", test_name, "main" ]
+    cur_module_name = ".".join(cur_module_name_list)
+
+    cur_module = Module()
+    cur_module.abs_path = os.path.abspath(source_dir)
+    cur_module.abs_name = cur_module_name
+    cur_module.ast = ast
+
+    program = Program()
+    program.modules["__main__"] = cur_module
+    program.modules[cur_module.abs_name] = cur_module
+
+    build_code_graph(program, cur_module, search_paths)
+    return
+
+    cpp_code = ast_to_cpp(ast, cur_module_name_list, source_path, search_paths)
     print("\n\n=== CPP code ===\n", cpp_code)
 
-    binary_path = tempfile.mktemp(suffix=".out", dir="/tmp")
+    if os.path.isdir(build_dir):
+        shutil.rmtree(build_dir)
+    os.mkdir(build_dir)
 
-    cpp_path = tempfile.mktemp(suffix=".cpp", dir="/tmp")
     with open(cpp_path, "wt") as fptr:
         fptr.write(cpp_code)
 
-    if os.system(f'g++ "{cpp_path}" -o "{binary_path}"') == 0:
-        print("Running binary", binary_path)
-        os.system(binary_path)
-        os.remove(binary_path)
-    else:
-        print("ERROR: Could not compile c++!")
+    assert os.system(f'g++ "{cpp_path}" -o "{binary_path}"') == 0
 
-    os.remove(cpp_path)
+    print("Running binary", binary_path)
+    assert os.system(binary_path) == 0
 
 
-
-
+if __name__ == '__main__':
+    compiler_test("import_test")

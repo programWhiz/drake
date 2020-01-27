@@ -19,7 +19,10 @@ pp = pg.production
 @pp("program : stmnt_list")
 @pp("program : ")
 def program(p):
-    return p
+    if len(p) == 0:
+        return []
+    else:
+        return p[0]
 
 
 @pp("block : NEWLINE INDENT stmnt_list DEDENT")
@@ -215,7 +218,11 @@ def integer(p):
 
 @pp('float : FLOAT')
 def integer(p):
-    return FloatLiteral(p[0], float(p[0].value))
+    fstr = p[0].value
+    if fstr.startswith('.'):
+        fstr = f"0{fstr}"
+
+    return FloatLiteral(p[0], float(fstr))
 
 
 @pp("str : STR_SINGLE_SINGLE")
@@ -253,7 +260,7 @@ def literal(p):
 
 @pp('def : DEF WORD OPEN_PAREN def_args CLOSE_PAREN COLON block')
 def def_func(p):
-    return FuncDef(name=p[1].value, token=p[1], args=p[3], block=p[-1])
+    return FuncDef(name=p[1].value, token=p[1], args=p[3], body=p[-1])
 
 
 @pp('def_args : ')
@@ -336,6 +343,49 @@ def elif_block(p):
 def elif_block(p):
     p[0].append(ElifNode(token=p[1], cond=p[2], body=p[4]))
     return p[0]
+
+
+@pp("stmnt : IMPORT import_path")
+def module_import(p):
+    return ImportStmnt(token=p[0], module=p[1])
+
+
+@pp("stmnt : FROM import_path IMPORT ASTER")
+def module_import(p):
+    return ImportStmnt(token=p[0], module=p[1], import_all=True)
+
+
+@pp("stmnt : FROM import_path IMPORT import_symbols")
+def module_import(p):
+    return ImportStmnt(token=p[0], module=p[1], symbols=p[3])
+
+
+@pp("import_path : DOT")
+@pp("import_path : WORD")
+def import_path_dot(p):
+    return ModuleNode(name=p[0].value, token=p[0])
+
+
+@pp("import_path : import_path WORD")
+def import_path_word(p):
+    p[0].add_name(p[1].value, p[1])
+    return p[0]
+
+
+@pp("import_path : import_path DOT WORD")
+def import_path_dotword(p):
+    p[0].add_name(p[2].value, p[2])
+    return p[0]
+
+
+@pp("import_symbols : import_symbols COMMA var")
+@pp("import_symbols : var")
+def import_symbols(p):
+    if len(p) == 1:
+        return p
+    else:
+        p[0].append(p[2])
+        return p[0]
 
 
 parser = pg.build()

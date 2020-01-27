@@ -1,3 +1,6 @@
+from typing import List
+
+
 class Node:
     def __init__(self, name, token):
         self.name = name
@@ -64,10 +67,10 @@ class BinaryOp(Node):
 
 
 class FuncDef(Node):
-    def __init__(self, name, token, args, block):
+    def __init__(self, name, token, args, body):
         super().__init__(name, token)
         self.args = args
-        self.block = block
+        self.body = body
 
 
 class FuncArg(Node):
@@ -96,9 +99,18 @@ class VarNode(Node):
         self.name_tokens = [ token ]
 
     def add_name(self, name, token):
-        self.name += f".{name}"
+        if not name.startswith("."):
+            self.name += "."
+        self.name += name
         self.name_dot_list.append(name)
         self.name_tokens.append(token)
+
+
+class ModuleNode(VarNode):
+    def __init__(self, name, token):
+        super().__init__(name, token)
+        self.abs_name = None
+        self.abs_path = None
 
 
 class InPlace(Node):
@@ -140,6 +152,14 @@ class ElseNode(Node):
     def __init__(self, token, body):
         super().__init__("else", token)
         self.body = body
+
+
+class ImportStmnt(Node):
+    def __init__(self, token, module, symbols=None, import_all=False):
+        super().__init__(module.name, token)
+        self.module:ModuleNode = module
+        self.symbols:List[VarNode] = symbols or []
+        self.import_all:bool = import_all
 
 
 def print_indented(indent, text):
