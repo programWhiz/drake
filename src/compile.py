@@ -6,14 +6,19 @@ from rply import ParsingError, Token, LexingError
 from rply.token import SourcePosition
 from src.code_graph import Program, Module, build_code_graph
 from src.cpp import ast_to_cpp
-from src.lexer import lexer
-from src.parser import parser, print_ast_debug
+from src.grammar.DrakeLexer import DrakeLexer
+from antlr4 import InputStream, FileStream
+from src.drake_ast import print_ast_debug
+
+from src.grammar.DrakeParser import DrakeParser, CommonTokenStream
 
 
 def compile_file(path:str):
-    with open(path, 'rt') as fptr:
-        source = fptr.read()
-    return compile_source(source)
+    return compile_stream(FileStream(path))
+
+
+def compile_string(source:str):
+    return compile_stream(InputStream(source))
 
 
 def get_compile_target_file(path:str) -> str:
@@ -28,7 +33,12 @@ def get_compile_target_file(path:str) -> str:
         return init_file
 
 
-def compile_source(source:str):
+def compile_stream(input_stream):
+    lexer = DrakeLexer(input_stream)
+    tokens = CommonTokenStream(lexer)
+    parser = DrakeParser(tokens)
+    return parser.file_input()
+
     source = clean_source(source)
 
     try:

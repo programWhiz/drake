@@ -1,18 +1,32 @@
 import os
 from pathlib import Path
-from src.drake_ast import ImportStmnt
+# from src.drake_ast import ImportStmnt
+from typing import Dict, List
+
+from src.drake_ast import surf_ast
+from src.grammar.DrakeParser import DrakeParser as DP
 
 
-def fill_module_paths(ast, cur_module_name_list, cur_module_path, search_paths):
+def find_module_imports(ast, cur_module_name_list, cur_module_path, search_paths):
     imports = []
-    for s in ast:
-        if not isinstance(s, ImportStmnt):
-            continue
 
-        s.module.abs_path = get_module_path(s.module.name_dot_list, cur_module_path, search_paths)
-        s.module.abs_name = get_full_module_name(s.module.name_dot_list, cur_module_name_list)
+    import_stmnts = surf_ast(ast, 'StmtContext/Simple_stmtContext/Small_stmtContext/Import_stmtContext/Import_nameContext/Dotted_as_namesContext/Dotted_as_nameContext')
 
-        imports.append(s)
+    for node in import_stmnts:
+        module_name_node = node.children[0]
+        rel_name = ''.join(term.symbol.text for term in module_name_node.children)
+        if len(node.children) == 1:   # no "as" statement after "import <rel_name>"
+            local_name = rel_name
+        else:  # using "import <rel_name> as <local_name>"
+            local_name = node.children[-1].symbol.text
+
+        name_dot_list = rel_name.split('.')
+        abs_path = get_module_path(name_dot_list, cur_module_path, search_paths)
+        abs_name = get_full_module_name(name_dot_list, cur_module_name_list)
+
+        imports.append({
+            'local_name': local_name, 'rel_name': rel_name,
+            'name_dot_list': name_dot_list, 'abs_path': abs_path, 'abs_name': abs_name })
 
     return imports
 

@@ -1,5 +1,5 @@
 from a import A
 from b import *
 import c.c1
-import c.c2
-from d.e.f import g
+import c.c2 as c2
+from d.e.f import g as G, g2 as G2

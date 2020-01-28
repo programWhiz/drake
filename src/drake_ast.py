@@ -114,11 +114,11 @@ class ModuleNode(VarNode):
 
 
 class InPlace(Node):
-    def __init__(self, var, op, expr):
+    def __init__(self, lhs, op, rhs):
         super().__init__(op.name, op)
-        self.var = var
+        self.lhs = lhs
         self.op = op
-        self.expr = expr
+        self.rhs = rhs
 
 
 class ClassDef(Node):
@@ -166,29 +166,23 @@ def print_indented(indent, text):
     print("  " * indent, text)
 
 
-def print_ast_debug(node, indent=0, visited=None, prefix=""):
-    if visited is None:
-        visited = set()
+def print_ast_debug(node, indent=0):
+    symbol = getattr(node, 'start', getattr(node, 'symbol', None))
+    print_indented(indent, f"{node.__class__.__name__} : {symbol}")
+    if hasattr(node, 'children'):
+        for child in node.children:
+            print_ast_debug(child, indent + 1)
 
-    if isinstance(node, list):
-        for item in node:
-            print_ast_debug(item, indent, visited)
-        return
 
-    class_name = node.__class__.__name__
-    print_indented(indent, f"{prefix}{class_name}({node.name})")
+def surf_ast(node, path):
+    parts = path.split('/')
 
-    if node in visited:
-        return
-    visited.add(node)
+    if isinstance(node, (list, tuple)):
+        nodes = node
+    else:
+        nodes = [ node ]
 
-    for key, value in sorted(node.__dict__.items()):
-        if isinstance(value, Node):
-            print_ast_debug(value, indent + 1, visited, f"{key}: ")
-        elif isinstance(value, (tuple, list)) and len(value) > 0 and isinstance(value[0], Node):
-            print_indented(indent + 1, f"{key}: [")
-            for i, item in enumerate(value):
-                print_ast_debug(item, indent + 2, visited, f"{i}: ")
-            print_indented(indent + 1, "]")
-        elif key not in ('name', 'token'):
-            print_indented(indent + 1, f"{key}: {value}")
+    for part in parts:
+        nodes = [ child for node in nodes for child in node.children if child.__class__.__name__ == part ]
+
+    return nodes
