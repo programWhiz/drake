@@ -177,10 +177,12 @@ stmt: simple_stmt | compound_stmt;
 simple_stmt: small_stmt (';' small_stmt)* (';')? NEWLINE;
 small_stmt: (expr_stmt | del_stmt | pass_stmt | flow_stmt |
              import_stmt | global_stmt | nonlocal_stmt | assert_stmt);
-expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
-                     ('=' (yield_expr|testlist_star_expr))*);
-annassign: ':' test ('=' test)?;
+expr_stmt: anassign_stmt | augassign_stmt | assign_stmt;
+assign_stmt : testlist_star_expr '=' (yield_expr|testlist_star_expr);
+anassign_stmt : testlist_star_expr annassign;
+annassign : ':' test ('=' test)?;
 testlist_star_expr: (test|star_expr) (',' (test|star_expr))* (',')?;
+augassign_stmt : testlist_star_expr augassign (yield_expr|testlist);
 augassign: ('+=' | '-=' | '*=' | '@=' | '/=' | '%=' | '&=' | '|=' | '^=' |
             '<<=' | '>>=' | '**=' | '//=');
 // For normal and annotated assignments, additional restrictions enforced by the interpreter
@@ -229,24 +231,39 @@ lambdef_nocond: 'lambda' (varargslist)? ':' test_nocond;
 or_test: and_test ('or' and_test)*;
 and_test: not_test ('and' not_test)*;
 not_test: 'not' not_test | comparison;
-comparison: expr (comp_op expr)*;
+comparison : expr (comp_ops expr)*;
+comp_op: comp_ops | comp_not_in | comp_is_not | comp_is | comp_in | comp_isa;
 // <> isn't actually a valid comparison operator in Python. It's here for the
 // sake of a __future__ import described in PEP 401 (which really works :-)
-comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not';
+comp_ops: '<'|'>'|'=='|'>='|'<='|'!=';
+comp_not_in: 'not' 'in';
+comp_is_not: 'is' 'not';
+comp_in: 'in' ;
+comp_is: 'is' ;
+comp_isa: 'isa' ;
 star_expr: '*' expr;
 expr: xor_expr ('|' xor_expr)*;
 xor_expr: and_expr ('^' and_expr)*;
 and_expr: shift_expr ('&' shift_expr)*;
 shift_expr: arith_expr (('<<'|'>>') arith_expr)*;
 arith_expr: term (('+'|'-') term)*;
-term: factor (('*'|'@'|'/'|'%'|'//') factor)*;
+term: factor (('*'|'/'|'%'|'//') factor)*;
 factor: ('+'|'-'|'~') factor | power;
 power: atom_expr ('**' factor)?;
 atom_expr: (AWAIT)? atom trailer*;
-atom: ('(' (yield_expr|testlist_comp)? ')' |
-       '[' (testlist_comp)? ']' |
-       '{' (dictorsetmaker)? '}' |
-       NAME | NUMBER | STRING+ | '...' | 'None' | 'True' | 'False');
+atom: atom_gen_expr | atom_list_expr | atom_dict_expr | bare_name | literal | ellipsis;
+atom_gen_expr: '(' (yield_expr|testlist_comp)? ')' ;
+atom_dict_expr: '{' (dictorsetmaker)? '}' ;
+atom_list_expr: '[' (testlist_comp)? ']';
+ellipsis: '...' ;
+bare_name: NAME ;
+none_literal : 'none' ;
+bool_literal : 'true' | 'false' ;
+int_literal : INTEGER ;
+string_literal : STRING+ ;
+float_literal : FLOAT_NUMBER ;
+imag_literal : IMAG_NUMBER ;
+literal : int_literal | string_literal | float_literal | imag_literal | none_literal | bool_literal ;
 testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* (',')? );
 trailer: '(' (arglist)? ')' | '[' subscriptlist ']' | '.' NAME;
 subscriptlist: subscript (',' subscript)* (',')?;
@@ -333,9 +350,9 @@ OR : 'or';
 AND : 'and';
 NOT : 'not';
 IS : 'is';
-NONE : 'None';
-TRUE : 'True';
-FALSE : 'False';
+NONE : 'none';
+TRUE : 'true';
+FALSE : 'false';
 CLASS : 'class';
 YIELD : 'yield';
 DEL : 'del';

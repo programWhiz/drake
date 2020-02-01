@@ -1,4 +1,6 @@
 from .g import *
 from .h import *
+from ..dd import dd_str as x
 
 f = "Z"
+x += " extending string"

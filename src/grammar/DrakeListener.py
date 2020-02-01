@@ -161,6 +161,24 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by DrakeParser#assign_stmt.
+    def enterAssign_stmt(self, ctx:DrakeParser.Assign_stmtContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#assign_stmt.
+    def exitAssign_stmt(self, ctx:DrakeParser.Assign_stmtContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#anassign_stmt.
+    def enterAnassign_stmt(self, ctx:DrakeParser.Anassign_stmtContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#anassign_stmt.
+    def exitAnassign_stmt(self, ctx:DrakeParser.Anassign_stmtContext):
+        pass
+
+
     # Enter a parse tree produced by DrakeParser#annassign.
     def enterAnnassign(self, ctx:DrakeParser.AnnassignContext):
         pass
@@ -176,6 +194,15 @@ class DrakeListener(ParseTreeListener):
 
     # Exit a parse tree produced by DrakeParser#testlist_star_expr.
     def exitTestlist_star_expr(self, ctx:DrakeParser.Testlist_star_exprContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#augassign_stmt.
+    def enterAugassign_stmt(self, ctx:DrakeParser.Augassign_stmtContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#augassign_stmt.
+    def exitAugassign_stmt(self, ctx:DrakeParser.Augassign_stmtContext):
         pass
 
 
@@ -530,6 +557,60 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by DrakeParser#comp_ops.
+    def enterComp_ops(self, ctx:DrakeParser.Comp_opsContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#comp_ops.
+    def exitComp_ops(self, ctx:DrakeParser.Comp_opsContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#comp_not_in.
+    def enterComp_not_in(self, ctx:DrakeParser.Comp_not_inContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#comp_not_in.
+    def exitComp_not_in(self, ctx:DrakeParser.Comp_not_inContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#comp_is_not.
+    def enterComp_is_not(self, ctx:DrakeParser.Comp_is_notContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#comp_is_not.
+    def exitComp_is_not(self, ctx:DrakeParser.Comp_is_notContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#comp_in.
+    def enterComp_in(self, ctx:DrakeParser.Comp_inContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#comp_in.
+    def exitComp_in(self, ctx:DrakeParser.Comp_inContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#comp_is.
+    def enterComp_is(self, ctx:DrakeParser.Comp_isContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#comp_is.
+    def exitComp_is(self, ctx:DrakeParser.Comp_isContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#comp_isa.
+    def enterComp_isa(self, ctx:DrakeParser.Comp_isaContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#comp_isa.
+    def exitComp_isa(self, ctx:DrakeParser.Comp_isaContext):
+        pass
+
+
     # Enter a parse tree produced by DrakeParser#star_expr.
     def enterStar_expr(self, ctx:DrakeParser.Star_exprContext):
         pass
@@ -626,6 +707,114 @@ class DrakeListener(ParseTreeListener):
 
     # Exit a parse tree produced by DrakeParser#atom.
     def exitAtom(self, ctx:DrakeParser.AtomContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#atom_gen_expr.
+    def enterAtom_gen_expr(self, ctx:DrakeParser.Atom_gen_exprContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#atom_gen_expr.
+    def exitAtom_gen_expr(self, ctx:DrakeParser.Atom_gen_exprContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#atom_dict_expr.
+    def enterAtom_dict_expr(self, ctx:DrakeParser.Atom_dict_exprContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#atom_dict_expr.
+    def exitAtom_dict_expr(self, ctx:DrakeParser.Atom_dict_exprContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#atom_list_expr.
+    def enterAtom_list_expr(self, ctx:DrakeParser.Atom_list_exprContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#atom_list_expr.
+    def exitAtom_list_expr(self, ctx:DrakeParser.Atom_list_exprContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#ellipsis.
+    def enterEllipsis(self, ctx:DrakeParser.EllipsisContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#ellipsis.
+    def exitEllipsis(self, ctx:DrakeParser.EllipsisContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#bare_name.
+    def enterBare_name(self, ctx:DrakeParser.Bare_nameContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#bare_name.
+    def exitBare_name(self, ctx:DrakeParser.Bare_nameContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#none_literal.
+    def enterNone_literal(self, ctx:DrakeParser.None_literalContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#none_literal.
+    def exitNone_literal(self, ctx:DrakeParser.None_literalContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#bool_literal.
+    def enterBool_literal(self, ctx:DrakeParser.Bool_literalContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#bool_literal.
+    def exitBool_literal(self, ctx:DrakeParser.Bool_literalContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#int_literal.
+    def enterInt_literal(self, ctx:DrakeParser.Int_literalContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#int_literal.
+    def exitInt_literal(self, ctx:DrakeParser.Int_literalContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#string_literal.
+    def enterString_literal(self, ctx:DrakeParser.String_literalContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#string_literal.
+    def exitString_literal(self, ctx:DrakeParser.String_literalContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#float_literal.
+    def enterFloat_literal(self, ctx:DrakeParser.Float_literalContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#float_literal.
+    def exitFloat_literal(self, ctx:DrakeParser.Float_literalContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#imag_literal.
+    def enterImag_literal(self, ctx:DrakeParser.Imag_literalContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#imag_literal.
+    def exitImag_literal(self, ctx:DrakeParser.Imag_literalContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#literal.
+    def enterLiteral(self, ctx:DrakeParser.LiteralContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#literal.
+    def exitLiteral(self, ctx:DrakeParser.LiteralContext):
         pass
 
 
