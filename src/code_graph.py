@@ -1,6 +1,8 @@
 import sys
 from collections import deque
 from pathlib import Path
+from typing import List
+
 import antlr4
 from src.drake_ast import surf_ast, surf_deep, print_ast_debug
 from src.module_search import find_module_imports, find_symbol_imports, ast_node_text
@@ -87,7 +89,7 @@ def ast_location_str(ast_node):
     else:
         location = ast_node.start
 
-    return f"{location.source[1].fileName}:{location.line}:{location.column}"
+    return f"{location.source[1].fileName} line {location.line} col {location.column}"
 
 
 def raise_unknown_ast_node(block, ast_node):
@@ -174,6 +176,13 @@ def build_test_star_stmt(block, ast_node):
     return instr
 
 
+def build_star_expr(block, ast_node):
+    expr = build_expression(block, ast_node.children[1])
+    star = StarExpr(block, ast_node, expr)
+    block.add_instr(star)
+    return star
+
+
 def build_test_stmt(block, ast_node):
     childs = ast_node.children
 
@@ -242,7 +251,7 @@ def build_comparison(block, ast_node):
         operator_lookup = binary_comparison_operator_classes
 
     for child in ast_node.children[1:]:
-        if isinstance(child, DP.Comp_opContext):
+        if isinstance(child, DP.Comp_opsContext):
             op = ast_node_text(child)
 
             try:
@@ -251,7 +260,7 @@ def build_comparison(block, ast_node):
                 raise ParseException(f"Unrecognized comparison operator {op} at {ast_location_str(child)}")
         else:
             right_expr = build_expression(block, child)
-            operator_instr = operator_cls(block=block, ast_node=child, left=left_expr, right=right_expr)
+            operator_instr = operator_cls(block=block, ast_node=child, left_instr=left_expr, right_instr=right_expr)
             child_instrs.append(operator_instr)
             left_expr = right_expr
 
@@ -569,26 +578,23 @@ class UnaryOp(Instruction):
         super().__init__(block, ast_node)
         self.child_instr = child_instr
 
+class StarExpr(UnaryOp):
+    pass
 
 class Assign(BinaryOp):
     pass
 
-
 class LogicalOr(BinaryOp):
     pass
-
 
 class LogicalAnd(BinaryOp):
     pass
 
-
 class LogicalNot(UnaryOp):
     pass
 
-
 class ComparisonOp(BinaryOp):
     pass
-
 
 class GreaterThanEqual(ComparisonOp):
     pass
@@ -644,6 +650,7 @@ binary_comparison_operator_classes = {
     "in": CompareNotIn,
     "not in": CompareNotIn,
     "isa": CompareIsA,
+    **multi_comparison_operator_classes
 }
 
 class BitwiseOr(BinaryOp):
