@@ -27,7 +27,7 @@
 
 # Creating set literals
 v = { "foo", "bar", 3, "baz" }
-# v2 = { item for item in my_list }
+v2 = { z for item in my_list for z in item }
 
 # Setting values in z from literals
 # z["foo"] = "dog"

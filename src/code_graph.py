@@ -303,6 +303,28 @@ def nest_binary_operators(block, ast_node, instrs, op_cls):
 
     return left
 
+def build_expression_list(block, ast_node):
+    instr_list = []
+
+    # exprlist: (expr | star_expr) (','(expr | star_expr))* (',')?;
+    childs = ast_node.children
+    while childs:
+        node, *childs = childs
+        if isinstance(node, DP.ExprContext):
+            instr = build_expression(block, node)
+        else:
+            instr = build_star_expr(block, node)
+
+        instr_list.append(instr)
+
+        if childs:  # eat comma
+            comma, *childs = childs
+
+    if len(instr_list) == 1:
+        return instr_list[0]
+
+    return InstrList(block, ast_node, instr_list)
+
 
 def build_expression(block, ast_node):
     instrs = []
@@ -711,13 +733,11 @@ def build_dict_maker_comprehension(block, ast_node):
         key_instr = build_test_stmt(for_loop, key_node)
         value_instr = build_test_stmt(for_loop, value_node)
         dict_comp.kvp_instr = KeyValuePair(for_loop, key_node, key_instr, value_instr)
-        for_loop.iter_vars = dict_comp.kvp_instr
 
     else:  # must start with **kwarg notation
         star_node, expr_node, *_ = childs
         expr_instr = build_expression(for_loop, expr_node)
         dict_comp.kvp_instr = KeyValueExpand(for_loop, star_node, expr_instr)
-        for_loop.iter_vars = dict_comp.kvp_instr
 
     return dict_comp
 
@@ -734,6 +754,7 @@ def build_comprehension_for_loop(block, ast_node):
 
     for_, expr_list, in_, or_test, *comp_iter = childs
 
+    for_loop_block.iter_vars = build_expression_list(for_loop_block, expr_list)
     iter_instr = build_logical_or_test(for_loop_block, or_test)
     for_loop_block.iter_src = iter_instr
 
@@ -773,17 +794,51 @@ def build_comprehension_if_stmt(block, ast_node):
 
 def build_set_maker(block, ast_node):
     # set_maker: set_maker_values | set_maker_comp;
-    pass
+    child = ast_node.children[0]
+    if isinstance(child, DP.Set_maker_valuesContext):
+        return build_set_maker_values(block, child)
+    else:
+        return build_set_maker_comprehension(block, child)
 
 
 def build_set_maker_values(block, ast_node):
     # set_maker_values: (test | star_expr) (',' (test | star_expr))* (',')?;
-    pass
+    childs = ast_node.children
+    child_instrs = []
+    while childs:
+        node, *childs = childs
+
+        if isinstance(node, DP.TestContext):
+            instr = build_test_stmt(block, node)
+        else:
+            instr = build_star_expr(block, node)
+
+        block.add_instr(instr)
+        child_instrs.append(instr)
+
+        if childs:   # eat comma
+            comma, *childs = childs
+
+    return child_instrs
 
 
 def build_set_maker_comprehension(block, ast_node):
     # set_maker_comp: (test | star_expr) comp_for;
-    pass
+    child = ast_node.children[0]
+
+    comprehension = SetComprehension(block, ast_node)
+    for_loop = build_comprehension_for_loop(block, ast_node.children[1])
+    comprehension.for_loop = for_loop
+
+    if isinstance(child, DP.TestContext):
+        instr = build_test_stmt(for_loop, child)
+    else:
+        instr = build_star_expr(for_loop, child)
+
+    comprehension.item_instr = instr
+
+    block.add_instr(comprehension)
+    return comprehension
 
 
 def build_compound_stmt(block, ast_stmt):
@@ -1180,6 +1235,13 @@ class DictComprehension(Instruction):
     def __init__(self, block, ast_node, kvp_instr=None, for_loop=None):
         super().__init__(block, ast_node)
         self.kvp_instr = kvp_instr
+        self.for_loop = for_loop
+
+
+class SetComprehension(Instruction):
+    def __init__(self, block, ast_node, item_instr=None, for_loop=None):
+        super().__init__(block, ast_node)
+        self.item_instr = item_instr
         self.for_loop = for_loop
 
 
