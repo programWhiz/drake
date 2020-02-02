@@ -75,6 +75,7 @@ def compiler_test(test_name="factorial"):
     cur_module.abs_path = os.path.abspath(source_dir)
     cur_module.abs_name = cur_module_name
     cur_module.ast = ast
+    cur_module.ast_node = ast
 
     program = Program()
     program.search_paths = search_paths
@@ -103,4 +104,4 @@ def compiler_test(test_name="factorial"):
 
 
 if __name__ == '__main__':
-    compiler_test("import_test")
+    compiler_test("simple_assign")

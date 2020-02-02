@@ -253,7 +253,7 @@ power: atom_expr ('**' factor)?;
 atom_expr: (AWAIT)? atom trailer*;
 atom: atom_gen_expr | atom_list_expr | atom_dict_expr | bare_name | literal | ellipsis;
 atom_gen_expr: '(' (yield_expr|testlist_comp)? ')' ;
-atom_dict_expr: '{' (dictorsetmaker)? '}' ;
+atom_dict_expr: '{' (dict_maker | set_maker)? '}' ;
 atom_list_expr: '[' (testlist_comp)? ']';
 ellipsis: '...' ;
 bare_name: NAME ;
@@ -267,14 +267,18 @@ literal : int_literal | string_literal | float_literal | imag_literal | none_lit
 testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* (',')? );
 trailer: '(' (arglist)? ')' | '[' subscriptlist ']' | '.' NAME;
 subscriptlist: subscript (',' subscript)* (',')?;
-subscript: test | (test)? ':' (test)? (sliceop)?;
-sliceop: ':' (test)?;
+subscript: test | slice_expr;
+slice_expr: (test)? ':' (test)? (':' (test)?)?;
 exprlist: (expr|star_expr) (',' (expr|star_expr))* (',')?;
 testlist: test (',' test)* (',')?;
-dictorsetmaker: ( ((test ':' test | '**' expr)
-                   (comp_for | (',' (test ':' test | '**' expr))* (',')?)) |
-                  ((test | star_expr)
-                   (comp_for | (',' (test | star_expr))* (',')?)) );
+
+dict_maker: dict_maker_key_vals | dict_maker_comp ;
+dict_maker_key_vals: (test ':' test | '**' expr) (',' (test ':' test | '**' expr))* (',')?;
+dict_maker_comp: (test ':' test | '**' expr) comp_for ;
+
+set_maker: set_maker_values | set_maker_comp;
+set_maker_values: (test | star_expr) (',' (test | star_expr))* (',')?;
+set_maker_comp: (test | star_expr) comp_for;
 
 classdef: 'class' NAME ('(' (arglist)? ')')? ':' suite;
 

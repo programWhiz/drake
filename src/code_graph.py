@@ -36,6 +36,8 @@ def compile_module_cached(program, abs_name, abs_path):
 
     build_code_graph(module)
 
+    print("==== Printing code tree for module: ", module.abs_name, "====")
+    print_code_tree(module)
     return module
 
 
@@ -63,23 +65,27 @@ def build_code_graph(module):
 
     build_block(module)
 
+    print_code_tree(module)
+
 
 def build_block(block):
     for child in block.ast_node.children:
         if isinstance(child, DP.StmtContext):
             build_graph_stmt(block, child)
-        elif ast_is_eof(child):
+        elif ast_is_empty(child):
             continue  # end of file
         else:
             raise_unknown_ast_node(block, child)
 
 
-def ast_is_eof(ast_node):
-    return ast_text_is(ast_node, "<EOF>")
+def ast_is_empty(ast_node):
+    return ast_text_is(ast_node, ("<EOF>", "\n"))
 
 
 def ast_text_is(ast_node, text):
-    return isinstance(ast_node, antlr4.TerminalNode) and ast_node.symbol.text == "<EOF>"
+    if not isinstance(text, (tuple, list)):
+        text = (text,)
+    return isinstance(ast_node, antlr4.TerminalNode) and ast_node.symbol.text in text
 
 
 def ast_location_str(ast_node):
@@ -163,8 +169,7 @@ def build_expr_stmt(block, ast_expr):
 def build_assign_stmt(block, ast_node):
     left = build_test_star_stmt(block, ast_node.children[0])
     right = build_test_star_stmt(block, ast_node.children[2])
-    assign = Assign(block, ast_node, left_instr=left, right_instr=right)
-    # TODO: resolve the var from left and right and add edge
+    assign = Assign(block, ast_node.children[1], left_instr=left, right_instr=right)
     block.add_instr(assign)
     return assign
 
@@ -174,7 +179,7 @@ def build_test_star_stmt(block, ast_node):
     child_instrs = []
     for child in ast_node.children:
         if isinstance(child, antlr4.TerminalNode):
-            continue   # skip commas in list
+            continue  # skip commas in list
         elif isinstance(child, DP.TestContext):
             child_instrs.append(build_test_stmt(block, child))
         elif isinstance(child, DP.Star_exprContext):
@@ -191,7 +196,7 @@ def build_test_star_stmt(block, ast_node):
 
 def build_star_expr(block, ast_node):
     expr = build_expression(block, ast_node.children[1])
-    star = StarExpr(block, ast_node, expr)
+    star = CollapseStarExpr(block, ast_node, expr)
     block.add_instr(star)
     return star
 
@@ -318,6 +323,7 @@ def build_bitwise_xor_expr(block, ast_node):
 
     return nest_binary_operators(block, ast_node, instrs, BitwiseXOr)
 
+
 def build_bitwise_and_expr(block, ast_node):
     instrs = []
     # and_expr: shift_expr('&' shift_expr) *;
@@ -343,17 +349,20 @@ def build_bitshift_expr(block, ast_node):
 
     return left_expr
 
+
 def build_arith_expr(block, ast_node):
     # arith_expr: term(('+' | '-') term) *;
     left_expr = build_term_expr(block, ast_node.children[0])
     if len(ast_node.children) == 1:
         return left_expr
 
-    for op_node, right_node in ast_node.children[1::2]:
+    childs = ast_node.children[1:]
+    while len(childs) > 0:
+        op_node, right_node, *childs = childs
         right_expr = build_term_expr(block, right_node)
         op_text = ast_node_text(op_node)
         instr_class = arith_operator_classes[op_text]
-        instr = instr_class(block=block, ast_node=op_node, left=left_expr, right=right_expr)
+        instr = instr_class(block=block, ast_node=op_node, left_instr=left_expr, right_instr=right_expr)
         block.add_instr(instr)
         left_expr = instr
 
@@ -366,15 +375,18 @@ def build_term_expr(block, ast_node):
     if len(ast_node.children) == 1:
         return left_expr
 
-    for op_node, right_node in ast_node.children[1::2]:
+    childs = ast_node.children[1:]
+    while len(childs) > 0:
+        op_node, right_node, *childs = childs
         right_expr = build_factor_expr(block, right_node)
         op_text = ast_node_text(op_node)
         instr_class = term_operator_classes[op_text]
-        instr = instr_class(block=block, ast_node=op_node, left=left_expr, right=right_expr)
+        instr = instr_class(block=block, ast_node=op_node, left_instr=left_expr, right_instr=right_expr)
         block.add_instr(instr)
         left_expr = instr
 
     return left_expr
+
 
 def build_factor_expr(block, ast_node):
     if len(ast_node.children) == 1:
@@ -389,6 +401,7 @@ def build_factor_expr(block, ast_node):
     block.add_instr(instr)
 
     return instr
+
 
 def build_power_expr(block, ast_node):
     # power: atom_expr('**' factor)?;
@@ -411,11 +424,126 @@ def build_atom_expr(block, ast_node):
     if isinstance(childs[0], antlr4.TerminalNode):
         await_node, *childs = childs
     atom_node, *trailers = childs
+    atom_instr = build_atom(block, atom_node)
 
     for trailer in trailers:
-        raise_unknown_ast_node(block, trailer)
+        atom_instr = build_atom_trailer(block, atom_instr, trailer)
 
-    return build_atom(block, atom_node)
+    return atom_instr
+
+
+def build_atom_trailer(block, atom, ast_node):
+    # trailer: '('(arglist)? ')' | '[' subscriptlist ']' | '.' NAME;
+    # Array / Dict subscript notation
+    first_char = ast_node_text(ast_node.children[0])
+    if first_char == '[':
+        return build_subscript_list(block, atom, ast_node.children[1])
+    elif first_char == '.':
+        bare_name = BareName(block=block, ast_node=ast_node.children[1], text=ast_node_text(ast_node.children[1]))
+        dot_op = DotOperator(block=block, ast_node=ast_node, left_instr=atom, right_instr=bare_name)
+        block.add_instr(dot_op)
+        return dot_op
+    elif first_char == '(':  # function call
+        args = []
+        if len(ast_node.children) == 3:
+            args = build_func_arg_list(block, ast_node.children[1])
+        return FuncCall(block=block, ast_node=ast_node.children[0],
+                        func_ptr_instr=atom, args=args)
+
+
+def build_func_arg_list(block, ast_node):
+    # arglist: argument(',' argument)*(',')?;
+    args = []
+    childs = ast_node.children
+    while len(childs) > 0:
+        arg_node, *childs = childs
+        args.append(build_func_arg(block, arg_node))
+
+        if len(childs) > 0:
+            comma, *childs = childs
+
+    return args
+
+
+def build_func_arg(block, ast_node):
+    # argument: (test (comp_for)? | test '=' test | '**' test | '*' test);
+    childs = ast_node.children
+    if len(childs) == 3:  # test = test
+        left = build_test_stmt(childs[0])
+        right = build_test_stmt(childs[2])
+        return KeyWordArg(block, childs[0], left_instr=left, right_instr=right)
+
+    if isinstance(childs[0], DP.TestContext):
+        test_node, *childs = childs
+        test_instr = build_test_stmt(block, test_node)
+        if len(childs) == 0:
+            return test_instr
+
+        assert len(childs) == 1 and isinstance(childs[0], DP.Comp_forContext)
+        generator_node = childs[0]
+        return build_generator_expr(block, test_instr, generator_node)
+
+    else:  # either *args or **kwargs style var
+        text = ast_node_text(childs[0])
+        child_instr = build_test_stmt(block, childs[1])
+        if text == "**":
+            return KeyWordArgVar(block=block, ast_node=childs[1], child_instr=child_instr)
+        else:
+            return ArgListVar(block=block, ast_node=childs[1], child_instr=child_instr)
+
+
+def build_subscript_list(block, left_instr, ast_node):
+    """
+    subscriptlist: subscript (',' subscript)* (',')?;
+    subscript: test | slice_expr;
+    slice_expr: (test)? ':' (test)? (':' (test)?)?;
+    """
+    childs = ast_node.children
+    subscripts = []
+
+    while len(childs) > 0:
+        subscr_node, *childs = childs
+        instr = build_subscript_instr(block, subscr_node)
+        subscripts.append(instr)
+
+        if len(childs) > 0:
+            comma, *childs = childs
+
+    right_instr = SubscriptList(block=block, ast_node=ast_node, instrs=subscripts)
+    block.add_instr(right_instr)
+
+    instr = GetItem(block=block, ast_node=ast_node, left_instr=left_instr, right_instr=right_instr)
+    block.add_instr(instr)
+    return instr
+
+
+def build_subscript_instr(block, ast_node):
+    """
+    subscript: test | slice_expr;
+    slice_expr: (test)? ':'(test)? (':'(test)?)?;
+    """
+    top_node = ast_node.children[0]
+    if isinstance(top_node, DP.TestContext):
+        return build_test_stmt(block, top_node)
+
+    # Otherwise, top node is a slice expr
+    childs = top_node.children
+
+    instrs = [None, None, None]
+    instr_idx = 0
+    while len(childs) > 0:
+        if isinstance(childs[0], DP.TestContext):
+            instr_node, *childs = childs
+            instrs[instr_idx] = build_test_stmt(block, instr_node)
+
+        if len(childs) > 0:  # move past colon
+            colon, *childs = childs
+
+        instr_idx += 1
+
+    slice_instr = SliceOp(block, ast_node, start=instrs[0], stop=instrs[1], stride=instrs[2])
+    block.add_instr(slice_instr)
+    return slice_instr
 
 
 def build_atom(block, ast_node):
@@ -424,6 +552,10 @@ def build_atom(block, ast_node):
         return build_literal(block, child)
     elif isinstance(child, DP.Bare_nameContext):
         return BareName(block, child, ast_node_text(child))
+    elif isinstance(child, DP.Atom_list_exprContext):
+        return build_atom_list_expr(block, child)
+    elif isinstance(child, DP.Atom_dict_exprContext):
+        return build_atom_dict_expr(block, child)
     else:
         raise_unknown_ast_node(block, child)
 
@@ -438,7 +570,7 @@ def build_literal(block, ast_node):
     elif isinstance(child, DP.Int_literalContext):
         value, dtype = int(text), 'int'
     elif isinstance(child, DP.Float_literalContext):
-        value, dtype = int(text), 'float'
+        value, dtype = float(text), 'float'
     elif isinstance(child, DP.Bool_literalContext):
         value, dtype = (text == "true"), 'bool'
     elif isinstance(child, DP.None_literalContext):
@@ -449,6 +581,209 @@ def build_literal(block, ast_node):
     literal = Literal(block=block, ast_node=child.children[0], dtype=dtype, value=value)
     block.add_instr(literal)
     return literal
+
+
+def build_atom_list_expr(block, ast_node):
+    # atom_list_expr: '[' (testlist_comp)? ']';
+    if len(ast_node.children) == 3:
+        args = build_test_list_comp(block, ast_node.children[1])
+
+    list_name = BareName(block=block, ast_node=ast_node.children[0], text="list")
+    instr = FuncCall(block, ast_node, func_ptr_instr=list_name, args=args)
+    block.add_instr(instr)
+    return instr
+
+
+def build_test_list_comp(block, ast_node):
+    # testlist_comp: (test | star_expr)(comp_for | (','(test | star_expr)) * (',')? );
+    child_instrs = []
+
+    first, *childs = ast_node.children
+    if isinstance(first, DP.TestContext):
+        instr = build_test_stmt(block, first)
+    else:
+        instr = build_star_expr(block, first)
+
+    child_instrs.append(instr)
+
+    while len(childs) > 0:
+        first, *childs = childs
+        if isinstance(first, DP.Comp_forContext):
+            instr = build_comp_for_ctx(block, first)
+        else:  # first is a comma, then additional list items
+            first, *childs = childs
+            if isinstance(first, DP.TestContext):
+                instr = build_test_stmt(block, first)
+            else:
+                instr = build_star_expr(block, first)
+
+        child_instrs.append(instr)
+
+    instr_list = InstrList(block, ast_node, child_instrs)
+    block.add_instr(instr_list)
+    return instr_list
+
+
+def build_atom_gen_expr(block, ast_node):
+    # atom_gen_expr: '('(yield_expr | testlist_comp)? ')';
+    pass
+
+
+def build_atom_dict_expr(block, ast_node):
+    # atom_dict_expr: '{'(dictorsetmaker)? '}';
+    is_dict = True
+    args = None
+
+    # If we have a middle child between braces, constructor args
+    if len(ast_node.children) > 2:
+        args_node = ast_node.children[1]
+        is_dict = isinstance(args_node, DP.Dict_makerContext)
+        if is_dict:
+            args = build_dict_maker(block, args_node)
+        else:
+            args = build_set_maker(block, args_node)
+
+    ctor_name = "dict" if is_dict else "set"
+    dict_name = BareName(block=block, ast_node=ast_node.children[0], text=ctor_name)
+    instr = FuncCall(block, ast_node, func_ptr_instr=dict_name, args=args)
+    block.add_instr(instr)
+    return instr
+
+
+def build_dict_maker(block, ast_node):
+    """
+    dict_maker: dict_maker_key_vals | dict_maker_comp ;
+    """
+    node = ast_node.children[0]
+    if isinstance(node, DP.Dict_maker_key_valsContext):
+        return build_dict_maker_key_vals(block, node)
+    else:
+        return build_dict_maker_comprehension(block, node)
+
+
+def build_dict_maker_key_vals(block, ast_node):
+    """
+    dict_maker_key_vals: (test ':' test | '**' expr) (',' (test ':' test | '**' expr))* (',')?;
+    """
+    childs = ast_node.children
+    child_instrs = []
+    while childs:
+        node, *childs = childs
+        # first check `test : test` idiom
+        if isinstance(node, DP.TestContext):
+            key_instr = build_test_stmt(block, node)
+            colon, value_node, *childs = childs
+            value_instr = build_test_stmt(block, value_node)
+            instr = KeyValuePair(block, node, left_instr=key_instr, right_instr=value_instr)
+
+        else:   # must be **kwargs idiom
+            expr_node, *childs = childs
+            expr_instr = build_expr_stmt(block, expr_node)
+            instr = KeyValueExpand(block, ast_node=node, child_instr=expr_instr)
+
+        block.add_instr(instr)
+        child_instrs.append(instr)
+
+        if childs:  # move past separator comma
+            comma, *childs = childs
+
+    instr = KeyValueList(block, ast_node, child_instrs)
+    block.add_instr(instr)
+    return instr
+
+
+def build_dict_maker_comprehension(block, ast_node):
+    """
+    dict_maker_comp: (test ':' test | '**' expr) comp_for;
+    """
+
+    childs = ast_node.children
+
+    dict_comp = DictComprehension(block, ast_node)
+    block.add_instr(dict_comp)
+
+    for_loop = build_comprehension_for_loop(block, childs[-1])
+    dict_comp.for_loop = for_loop
+
+    # Check for `test : test` idiom
+    if isinstance(childs[0], DP.TestContext):
+        key_node, colon, value_node, *_ = childs
+        key_instr = build_test_stmt(for_loop, key_node)
+        value_instr = build_test_stmt(for_loop, value_node)
+        dict_comp.kvp_instr = KeyValuePair(for_loop, key_node, key_instr, value_instr)
+        for_loop.iter_vars = dict_comp.kvp_instr
+
+    else:  # must start with **kwarg notation
+        star_node, expr_node, *_ = childs
+        expr_instr = build_expression(for_loop, expr_node)
+        dict_comp.kvp_instr = KeyValueExpand(for_loop, star_node, expr_instr)
+        for_loop.iter_vars = dict_comp.kvp_instr
+
+    return dict_comp
+
+
+def build_comprehension_for_loop(block, ast_node):
+    # comp_for: (ASYNC)? 'for' exprlist 'in' or_test (comp_iter)?;
+    childs = ast_node.children
+
+    if ast_text_is(childs[0], "async"):
+        await_node, *childs = childs
+
+    for_loop_block = ForLoop()
+    block.add_instr(for_loop_block)
+
+    for_, expr_list, in_, or_test, *comp_iter = childs
+
+    iter_instr = build_logical_or_test(for_loop_block, or_test)
+    for_loop_block.iter_src = iter_instr
+
+    if comp_iter:
+        build_comprehension_iter(for_loop_block, comp_iter[0])
+
+    return for_loop_block
+
+
+def build_comprehension_iter(block, ast_node):
+    # comp_iter: comp_for | comp_if;
+    child = ast_node.children[0]
+    if isinstance(child, DP.Comp_forContext):
+        return build_comprehension_for_loop(block, child)
+    else:
+        return build_comprehension_if_stmt(block, child)
+
+
+def build_test_nocond(block, ast_node):
+    # test_nocond: or_test | lambdef_nocond;
+    child = ast_node.children[0]
+    if isinstance(child, DP.Or_testContext):
+        return build_logical_or_test(block, child)
+    else:
+        raise_unknown_ast_node(block, child)
+
+
+def build_comprehension_if_stmt(block, ast_node):
+    # comp_if: 'if' test_nocond (comp_iter)?;
+    if_, test_node, *comp_iter = ast_node.children
+
+    block.filter_cond = build_test_nocond(block, test_node)
+
+    if comp_iter:
+        build_comprehension_iter(block, comp_iter[0])
+
+
+def build_set_maker(block, ast_node):
+    # set_maker: set_maker_values | set_maker_comp;
+    pass
+
+
+def build_set_maker_values(block, ast_node):
+    # set_maker_values: (test | star_expr) (',' (test | star_expr))* (',')?;
+    pass
+
+
+def build_set_maker_comprehension(block, ast_node):
+    # set_maker_comp: (test | star_expr) comp_for;
+    pass
 
 
 def build_compound_stmt(block, ast_stmt):
@@ -480,19 +815,23 @@ def term_text_equals(term_node, text):
     return isinstance(term_node, antlr4.TerminalNode) and term_node.symbol.text == text
 
 
-class Program:
+class CodeNode:
+    pass
+
+
+class Program(CodeNode):
     def __init__(self):
         self.search_paths = []
-        self.modules = {}
+        self.modules = { }
 
 
-class Block:
+class Block(CodeNode):
     def __init__(self, ast=None, ast_node=None, vars=None, blocks=None, parent=None, program=None):
         self.program = program
         self.parent = parent
         self.ast = ast
         self.ast_node = ast_node
-        self.vars = vars or {}
+        self.vars = vars or { }
         self.blocks = blocks or []
         self.instructions = []
 
@@ -507,6 +846,7 @@ class Block:
     def add_instr(self, instr):
         self.instructions.append(instr)
 
+
 class Module(Block):
     def __init__(self, ast=None, abs_path=None, abs_name=None, vars=None, blocks=None):
         super().__init__(ast=ast, ast_node=ast, vars=vars, blocks=blocks)
@@ -514,14 +854,16 @@ class Module(Block):
         self.abs_name = abs_name
 
 
-class Func:
-    def __init__(self):
+class FuncDef(Block):
+    def __init__(self, ast=None, ast_node=None, vars=None, blocks=None, parent=None, program=None):
+        super().__init__(ast=ast, ast_node=ast_node, vars=vars, blocks=blocks, parent=parent, program=program)
         self.return_dtype = None
         self.args = None
 
 
-class Var:
+class Var(CodeNode):
     """A variable handle in a block."""
+
     def __init__(self, name=None, block=None, program=None, ast_node=None):
         self.ast_node = ast_node
         self.name = name
@@ -531,15 +873,16 @@ class Var:
         self.read_edges = []
 
 
-class BareName:
+class BareName(CodeNode):
     def __init__(self, block=None, ast_node=None, text=None):
         self.block = block
         self.ast_node = ast_node
         self.text = text
 
 
-class Instruction():
+class Instruction(CodeNode):
     """An instruction in a block.  Occurs in an ordered list."""
+
     def __init__(self, block, ast_node):
         self.block = block
         self.ast_node = ast_node
@@ -547,6 +890,7 @@ class Instruction():
 
 class Literal(Instruction):
     """Any kind of literal, string, int, float."""
+
     def __init__(self, block, ast_node, dtype, value):
         super().__init__(block, ast_node)
         self.dtype = dtype
@@ -557,15 +901,20 @@ class InstrList(Instruction):
     """
     Wraps a list of instructions such as (a, b, c, *d) for one side of an assignment
     """
+
     def __init__(self, block, ast_node, instrs):
         super().__init__(block, ast_node)
-        self.instrs = instrs
+        self.instrs = instrs or []
+
+    def add_instr(self, instr):
+        self.instrs.append(instr)
 
 
 class TernaryCond(Instruction):
     """
     A ternary conditional such as `foo() if my_bool else bar()`
     """
+
     def __init__(self, block, ast_node, cond_instr, true_instr, false_instr):
         super().__init__(block, ast_node)
         self.cond_instr = cond_instr
@@ -577,6 +926,7 @@ class BinaryOp(Instruction):
     """
     Any binary operation instruction that has a left and right operand.
     """
+
     def __init__(self, block, ast_node, left_instr, right_instr):
         super().__init__(block, ast_node)
         self.left_instr = left_instr
@@ -587,60 +937,83 @@ class UnaryOp(Instruction):
     """
     Any binary operation instruction that has a single operand.
     """
+
     def __init__(self, block, ast_node, child_instr):
         super().__init__(block, ast_node)
         self.child_instr = child_instr
 
-class StarExpr(UnaryOp):
+
+class CollapseStarExpr(UnaryOp):
     pass
+
+
+class ExpandStarExpr(UnaryOp):
+    pass
+
 
 class Assign(BinaryOp):
     pass
 
+
 class LogicalOr(BinaryOp):
     pass
+
 
 class LogicalAnd(BinaryOp):
     pass
 
+
 class LogicalNot(UnaryOp):
     pass
+
 
 class ComparisonOp(BinaryOp):
     pass
 
+
 class GreaterThanEqual(ComparisonOp):
     pass
+
 
 class GreaterThan(ComparisonOp):
     pass
 
+
 class LessThanEqual(ComparisonOp):
     pass
+
 
 class LessThan(ComparisonOp):
     pass
 
+
 class Equals(ComparisonOp):
     pass
+
 
 class NotEquals(ComparisonOp):
     pass
 
+
 class CompareIs(ComparisonOp):
     pass
+
 
 class CompareIsNot(ComparisonOp):
     pass
 
+
 class CompareIn(ComparisonOp):
     pass
+
 
 class CompareNotIn(ComparisonOp):
     pass
 
+
 class CompareIsA(ComparisonOp):
     pass
+
 
 class MultiComparison(Instruction):
     def __init__(self, block, ast_node, comps):
@@ -666,43 +1039,56 @@ binary_comparison_operator_classes = {
     **multi_comparison_operator_classes
 }
 
+
 class BitwiseOr(BinaryOp):
     pass
+
 
 class BitwiseAnd(BinaryOp):
     pass
 
+
 class BitwiseXOr(BinaryOp):
     pass
+
 
 class BitShiftLeft(BinaryOp):
     pass
 
+
 class BitShiftRight(BinaryOp):
     pass
+
 
 class ArithPlus(BinaryOp):
     pass
 
+
 class ArithPower(BinaryOp):
     pass
 
+
 class ArithMinus(BinaryOp):
     pass
+
 
 arith_operator_classes = {
     '+': ArithPlus,
     '-': ArithMinus,
 }
 
+
 class ArithMultiply(BinaryOp):
     pass
+
 
 class ArithDivide(BinaryOp):
     pass
 
+
 class ArithModulo(BinaryOp):
     pass
+
 
 class ArithIntDivide(BinaryOp):
     pass
@@ -715,11 +1101,14 @@ term_operator_classes = {
     '//': ArithIntDivide,
 }
 
+
 class PositiveUnary(UnaryOp):
     pass
 
+
 class NegateUnary(UnaryOp):
     pass
+
 
 class BitwiseNot(UnaryOp):
     pass
@@ -732,21 +1121,107 @@ factor_operator_classes = {
 }
 
 
+class FuncCall(Instruction):
+    def __init__(self, block, ast_node, func_ptr_instr, args=None):
+        super().__init__(block, ast_node)
+        self.func_ptr_instr = func_ptr_instr
+        self.args = args
+
+
+class ListGenerator(Block):
+    pass
+
+
+class DotOperator(BinaryOp):
+    pass
+
+
+class KeyWordArg(BinaryOp):
+    pass
+
+
+class KeyWordArgVar(UnaryOp):
+    pass
+
+
+class ArgListVar(UnaryOp):
+    pass
+
+
+class KeyValueExpand(UnaryOp):
+    pass
+
+
+class GetItem(BinaryOp):
+    pass
+
+
+class SubscriptList(InstrList):
+    pass
+
+
+class SliceOp(Instruction):
+    def __init__(self, block, ast_node, start, stop, stride):
+        super().__init__(block, ast_node)
+        self.start = start
+        self.stop = stop
+        self.stride = stride
+
+
+class KeyValuePair(BinaryOp):
+    pass
+
+
+class KeyValueList(InstrList):
+    pass
+
+
+class DictComprehension(Instruction):
+    def __init__(self, block, ast_node, kvp_instr=None, for_loop=None):
+        super().__init__(block, ast_node)
+        self.kvp_instr = kvp_instr
+        self.for_loop = for_loop
+
+
+class ForLoop(Block):
+    def __init__(self, ast=None, ast_node=None, vars=None,
+                 blocks=None, parent=None, program=None,
+                 iter_vars=None, iter_src=None, filter_cond=None):
+        super().__init__(ast, ast_node, vars, blocks, parent, program)
+        self.iter_vars = iter_vars
+        self.iter_src = iter_src
+        self.filter_cond = filter_cond
+
+
 def print_indent(str, indent):
     print("|--" * indent, str)
 
 
-def print_code_tree(node, indent=0):
+def print_code_tree(node, indent=0, prefix="", visited=None):
+    print_indent(f"{prefix}{node.__class__.__name__}", indent)
+
+    if visited is None:
+        visited = set()
+    if node in visited:
+        return
+    visited.add(node)
+
+    indent += 1
+
     for key, value in node.__dict__.items():
         if isinstance(value, (list, tuple)):
-            print_indent(key, indent)
-            for item in value:
-                print_code_tree(value, indent + 2)
+            print_indent(f"{key} [List]", indent)
+            for i, item in enumerate(value):
+                if isinstance(item, CodeNode):
+                    print_code_tree(item, indent + 1, f"{i}. ", visited)
+                else:
+                    print_indent(f"{i}. {item}", indent + 1)
 
-        elif isinstance(value, (str, int, float, bool)) or value is None:
-            print_indent(f"{key}: {value}", indent)
+        elif isinstance(value, CodeNode):
+            print_code_tree(value, indent, f"{key}: ", visited)
+
+        elif isinstance(value, antlr4.ParserRuleContext):
+            print_indent(f"{key}: {value.start.text}", indent)
 
         else:
-            print_indent(key, indent)
-            print_code_tree(value, indent + 1)
-
+            print_indent(f"{key}: {value}", indent)

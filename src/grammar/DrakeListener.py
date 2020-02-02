@@ -854,12 +854,12 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
-    # Enter a parse tree produced by DrakeParser#sliceop.
-    def enterSliceop(self, ctx:DrakeParser.SliceopContext):
+    # Enter a parse tree produced by DrakeParser#slice_expr.
+    def enterSlice_expr(self, ctx:DrakeParser.Slice_exprContext):
         pass
 
-    # Exit a parse tree produced by DrakeParser#sliceop.
-    def exitSliceop(self, ctx:DrakeParser.SliceopContext):
+    # Exit a parse tree produced by DrakeParser#slice_expr.
+    def exitSlice_expr(self, ctx:DrakeParser.Slice_exprContext):
         pass
 
 
@@ -881,12 +881,57 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
-    # Enter a parse tree produced by DrakeParser#dictorsetmaker.
-    def enterDictorsetmaker(self, ctx:DrakeParser.DictorsetmakerContext):
+    # Enter a parse tree produced by DrakeParser#dict_maker.
+    def enterDict_maker(self, ctx:DrakeParser.Dict_makerContext):
         pass
 
-    # Exit a parse tree produced by DrakeParser#dictorsetmaker.
-    def exitDictorsetmaker(self, ctx:DrakeParser.DictorsetmakerContext):
+    # Exit a parse tree produced by DrakeParser#dict_maker.
+    def exitDict_maker(self, ctx:DrakeParser.Dict_makerContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#dict_maker_key_vals.
+    def enterDict_maker_key_vals(self, ctx:DrakeParser.Dict_maker_key_valsContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#dict_maker_key_vals.
+    def exitDict_maker_key_vals(self, ctx:DrakeParser.Dict_maker_key_valsContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#dict_maker_comp.
+    def enterDict_maker_comp(self, ctx:DrakeParser.Dict_maker_compContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#dict_maker_comp.
+    def exitDict_maker_comp(self, ctx:DrakeParser.Dict_maker_compContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#set_maker.
+    def enterSet_maker(self, ctx:DrakeParser.Set_makerContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#set_maker.
+    def exitSet_maker(self, ctx:DrakeParser.Set_makerContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#set_maker_values.
+    def enterSet_maker_values(self, ctx:DrakeParser.Set_maker_valuesContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#set_maker_values.
+    def exitSet_maker_values(self, ctx:DrakeParser.Set_maker_valuesContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#set_maker_comp.
+    def enterSet_maker_comp(self, ctx:DrakeParser.Set_maker_compContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#set_maker_comp.
+    def exitSet_maker_comp(self, ctx:DrakeParser.Set_maker_compContext):
         pass
 
 
