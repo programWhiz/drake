@@ -1,10 +1,8 @@
 import sys
-from collections import deque
 from pathlib import Path
-from typing import List
-
 import antlr4
-from src.drake_ast import surf_ast, surf_deep, print_ast_debug
+from src.exceptions import *
+from src.error_listener import format_source_code_error
 from src.module_search import find_module_imports, find_symbol_imports, ast_node_text
 from src.grammar.DrakeParser import DrakeParser as DP
 
@@ -60,6 +58,7 @@ def build_code_graph(module):
                 location_str = ast_location_str(im['module']['ast_node'])
                 err = f"Module `{im['module']['abs_name']}` has no symbol `{symbol['remote_name']}` in import from {location_str}"
                 sys.stderr.write(f"Symbol not found: {err}\n")
+                print_source_code_error(symbol['ast_node'])
                 raise SymbolNotFound(err)
 
     build_block(module)
@@ -84,12 +83,16 @@ def ast_text_is(ast_node, text):
 
 
 def ast_location_str(ast_node):
-    if isinstance(ast_node, antlr4.TerminalNode):
-        location = ast_node.symbol
-    else:
-        location = ast_node.start
+    loc = ast_node_location(ast_node)
+    return f"In file \"{loc['file']}\" line {loc['line']} col {loc['col']}"
 
-    return f"{location.source[1].fileName} line {location.line} col {location.column}"
+
+def ast_node_location(ast_node):
+    if isinstance(ast_node, antlr4.TerminalNode):
+        loc = ast_node.symbol
+    else:
+        loc = ast_node.start
+    return { 'file': loc.source[1].fileName, 'line': loc.line, 'col': loc.column }
 
 
 def raise_unknown_ast_node(block, ast_node):
@@ -102,7 +105,17 @@ def raise_unknown_ast_node(block, ast_node):
     loc_str = ast_location_str(ast_node)
     error = f"{loc_str}: Unhandled AST node type: {node_type}, `{ast_text}`"
     sys.stderr.write(f"Parse error {error}\n")
+
+    print_source_code_error(ast_node)
     raise ParseException(error)
+
+
+def print_source_code_error(ast_node):
+    loc = ast_node_location(ast_node)
+    source_code = open(loc['file'], 'rt').read()
+    source_code_error = format_source_code_error(source_code, loc['line'], loc['col'])
+    sys.stderr.write(source_code_error)
+    sys.stderr.write("\n")
 
 
 def build_graph_stmt(block, ast_stmt):
@@ -718,21 +731,22 @@ factor_operator_classes = {
     '~': BitwiseNot,
 }
 
-class BuildException(Exception):
-    pass
+
+def print_indent(str, indent):
+    print("|--" * indent, str)
 
 
-class MissingAttribute(BuildException):
-    pass
+def print_code_tree(node, indent=0):
+    for key, value in node.__dict__.items():
+        if isinstance(value, (list, tuple)):
+            print_indent(key, indent)
+            for item in value:
+                print_code_tree(value, indent + 2)
 
+        elif isinstance(value, (str, int, float, bool)) or value is None:
+            print_indent(f"{key}: {value}", indent)
 
-class UndeclaredIdentifier(BuildException):
-    pass
+        else:
+            print_indent(key, indent)
+            print_code_tree(value, indent + 1)
 
-
-class SymbolNotFound(BuildException):
-    pass
-
-
-class ParseException(BuildException):
-    pass

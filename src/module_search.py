@@ -95,6 +95,7 @@ def find_symbol_imports(ast, cur_module_name_list, cur_module_path, search_paths
             import_symbols.append({
                 'remote_name': symbol_remote_name,
                 'local_name': symbol_local_name,
+                'ast_node': name_node
             })
 
         imports.append({
