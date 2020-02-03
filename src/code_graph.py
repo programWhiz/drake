@@ -607,6 +607,7 @@ def build_literal(block, ast_node):
 
 def build_atom_list_expr(block, ast_node):
     # atom_list_expr: '[' (testlist_comp)? ']';
+    args = None
     if len(ast_node.children) == 3:
         args = build_test_list_comp(block, ast_node.children[1])
 
@@ -617,33 +618,52 @@ def build_atom_list_expr(block, ast_node):
 
 
 def build_test_list_comp(block, ast_node):
-    # testlist_comp: (test | star_expr)(comp_for | (','(test | star_expr)) * (',')? );
-    child_instrs = []
-
-    first, *childs = ast_node.children
-    if isinstance(first, DP.TestContext):
-        instr = build_test_stmt(block, first)
+    # testlist_comp: list_maker_items | list_maker_comp
+    child = ast_node.children[0]
+    if isinstance(child, DP.List_maker_compContext):
+        return build_list_maker_comp(block, child)
     else:
-        instr = build_star_expr(block, first)
+        return build_list_maker_items(block, child)
 
-    child_instrs.append(instr)
 
-    while len(childs) > 0:
+def build_list_maker_items(block, ast_node):
+    # list_maker_items: (test | star_expr)(','(test | star_expr)) * (',')?;
+    child_instrs = []
+    childs = ast_node.children
+    while childs:
         first, *childs = childs
-        if isinstance(first, DP.Comp_forContext):
-            instr = build_comp_for_ctx(block, first)
-        else:  # first is a comma, then additional list items
-            first, *childs = childs
-            if isinstance(first, DP.TestContext):
-                instr = build_test_stmt(block, first)
-            else:
-                instr = build_star_expr(block, first)
+        if isinstance(first, DP.TestContext):
+            instr = build_test_stmt(block, first)
+        else:
+            instr = build_star_expr(block, first)
 
         child_instrs.append(instr)
+
+        if childs:  # eat comma
+            comma, *childs = childs
 
     instr_list = InstrList(block, ast_node, child_instrs)
     block.add_instr(instr_list)
     return instr_list
+
+
+def build_list_maker_comp(block, ast_node):
+    # list_maker_comp: (test | star_expr) comp_for ;
+    child = ast_node.children[0]
+
+    comprehension = ListComprehension(block, ast_node)
+    for_loop = build_comprehension_for_loop(block, ast_node.children[1])
+    comprehension.for_loop = for_loop
+
+    if isinstance(child, DP.TestContext):
+        instr = build_test_stmt(for_loop, child)
+    else:
+        instr = build_star_expr(for_loop, child)
+
+    comprehension.item_instr = instr
+
+    block.add_instr(comprehension)
+    return comprehension
 
 
 def build_atom_gen_expr(block, ast_node):
@@ -1243,6 +1263,10 @@ class SetComprehension(Instruction):
         super().__init__(block, ast_node)
         self.item_instr = item_instr
         self.for_loop = for_loop
+
+
+class ListComprehension(SetComprehension):
+    pass
 
 
 class ForLoop(Block):

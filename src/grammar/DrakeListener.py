@@ -827,6 +827,24 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by DrakeParser#list_maker_items.
+    def enterList_maker_items(self, ctx:DrakeParser.List_maker_itemsContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#list_maker_items.
+    def exitList_maker_items(self, ctx:DrakeParser.List_maker_itemsContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#list_maker_comp.
+    def enterList_maker_comp(self, ctx:DrakeParser.List_maker_compContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#list_maker_comp.
+    def exitList_maker_comp(self, ctx:DrakeParser.List_maker_compContext):
+        pass
+
+
     # Enter a parse tree produced by DrakeParser#trailer.
     def enterTrailer(self, ctx:DrakeParser.TrailerContext):
         pass
