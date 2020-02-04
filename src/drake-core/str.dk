@@ -1,0 +1,42 @@
+
+
+class str:
+    const short_len = 24
+    uint32 capacity = short_len, length = 0
+    data = tuple[uint8](size=short_len);
+
+    def push(c):
+        if length + 1 >= capacity:
+            capacity *= 2
+            data.resize(capacity)
+
+        data[length++] = c
+        data[length] = 0
+
+    def pop():
+        assert length > 0, "Tried to pop from empty string!"
+        end_char = data[length-1]
+        length -= 1
+        arr[length] = 0
+
+    def __iter__():
+        for i in range(0, length):
+            yield me[i]
+
+    def __len__():
+        return length
+
+    def __eq__(str s):
+        if s.length != me.length:
+            return false
+
+        for i in range(0, length):
+            if s.data[i] != me.data[i]:
+                return false
+
+        return true
+
+    def __eq__(char c):
+        if me.length != 1:
+            return false
+        return me.data[0] == c

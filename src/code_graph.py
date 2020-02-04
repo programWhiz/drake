@@ -71,7 +71,7 @@ def build_code_graph(module):
 def build_block(block):
     for child in block.ast_node.children:
         if isinstance(child, DP.StmtContext):
-            build_graph_stmt(block, child)
+            build_statement(block, child)
         elif ast_is_empty(child):
             continue  # end of file
         else:
@@ -124,15 +124,13 @@ def print_source_code_error(ast_node):
     sys.stderr.write("\n")
 
 
-def build_graph_stmt(block, ast_stmt):
-    for child in ast_stmt.children:
-        # Each statement is either simple (assign, arith, etc.) or compound (if / class / def)
-        if isinstance(child, DP.Simple_stmtContext):
-            build_simple_stmt(block, child)
-        elif isinstance(child, DP.Compound_stmtContext):
-            build_compound_stmt(block, child)
-        else:
-            raise_unknown_ast_node(block, child)
+def build_statement(block, ast_stmt):
+    child = ast_stmt.children[0]
+    # stmt: simple_stmt | compound_stmt;
+    if isinstance(child, DP.Simple_stmtContext):
+        return build_simple_stmt(block, child)
+    else:
+        return build_compound_stmt(block, child)
 
 
 def build_simple_stmt(block, ast_stmt):
@@ -153,6 +151,8 @@ def build_simple_stmt(block, ast_stmt):
                     continue  # imports already handled
                 else:  # handle a local import
                     build_block_local_import(block, child)
+            elif isinstance(child, DP.Pass_stmtContext):
+                continue  # skip instruction
             else:
                 raise_unknown_ast_node(block, child)
 
@@ -865,25 +865,177 @@ def build_compound_stmt(block, ast_stmt):
     # compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt;
     for child in ast_stmt.children:
         if isinstance(child, DP.If_stmtContext):
-            pass
+            build_if_statement(block, child)
         elif isinstance(child, DP.While_stmtContext):
-            pass
+            build_while_loop_statement(block, child)
         elif isinstance(child, DP.For_stmtContext):
-            pass
+            build_forloop_statement(block, child)
         elif isinstance(child, DP.Try_stmtContext):
-            pass
+            build_forloop_statement(block, child)
         elif isinstance(child, DP.With_stmtContext):
-            pass
+            build_with_statement(block, child)
         elif isinstance(child, DP.FuncdefContext):
-            pass
+            build_func_def(block, child)
         elif isinstance(child, DP.ClassdefContext):
-            pass
+            build_classdef(block, child)
         elif isinstance(child, DP.DecoratedContext):
-            pass
+            build_decorated_stmt(block, child)
         elif isinstance(child, DP.Async_stmtContext):
-            pass
+            build_async_stmt(block, child)
         else:
             raise_unknown_ast_node(block, child)
+
+
+def build_classdef(block, ast_node):
+    # 'class' NAME ('(' (arglist)? ')')? ':' suite;
+    class_name = ast_node_text(ast_node.children[1])
+
+    supers = []
+    for child in ast_node.children:
+        if isinstance(child, DP.ArglistContext):
+            supers = build_func_arg_list(block, child)
+            break
+
+    class_instr = ClassDef(parent=block, ast_node=ast_node, class_name=class_name, supers=supers)
+    class_instr.body = build_suite(class_instr, ast_node.children[-1])
+    block.add_instr(class_instr)
+
+def build_func_def(block, ast_node):
+    # funcdef: 'def' NAME parameters ('->' test)? ':' suite;
+
+    def_, func_name, params, *childs = ast_node.children
+    *childs, colon_, suite = childs
+
+    returns = None
+    if childs:  # have unparsed tokens, is "-> <return>"
+        arrow_, ret_type = childs
+        returns = build_test_stmt(block, ret_type)
+
+    name_instr = ast_node_text(func_name)
+    params_instr = build_parameters(block, params)
+    func = FuncDef(ast_node=ast_node, parent=block, name=name_instr, params=params_instr, returns=returns)
+    func.body = build_suite(func, ast_node.children[-1])
+    block.add_instr(func)
+    return func
+
+
+def build_parameters(block, ast_node):
+    # parameters: '(' (typedargslist)? ')';
+
+    # if only two children, just parens, no params
+    if len(ast_node.children) < 3:
+        return []
+
+    return build_typedargs_list(block, ast_node.children[1])
+
+
+def build_typedargs_list(block, ast_node):
+    """
+    typedargslist: typedarg_item (',' typedarg_item)* (',')?;
+    """
+    args = []
+    childs = ast_node.children
+    while childs:
+        typedarg_node, *childs = childs
+        instr = build_typedarg_item(block, typedarg_node)
+        args.append(instr)
+        if childs:
+            comma_, *childs = childs
+
+    return args
+
+
+def build_typedarg_item(block, ast_node):
+    # typedarg_item: namedarg | star_args | named_kw_args
+    child = ast_node.children[0]
+    if isinstance(child, DP.NamedargContext):
+        return build_named_arg(block, child)
+    elif isinstance(child, DP.Star_argsContext):
+        return build_star_args(block, child)
+    elif isinstance(child, DP.Named_kw_argsContext):
+        return build_kw_args(block, child)
+    else:
+        raise_unknown_ast_node(block, child)
+
+
+def build_named_arg(block, ast_node):
+    # namedarg: type_qual? NAME ('=' test) ? ;
+    childs = ast_node.children
+
+    type_qual, default_value = None, None
+
+    if isinstance(childs[0], DP.Type_qualContext):
+        type_qual, *childs = childs
+        type_qual = build_type_qual(block, type_qual)
+
+    name, childs = ast_node_text(childs[0]), childs[1:]
+
+    if childs:  # has a test statement
+        default_value = build_test_stmt(block, childs[1])
+
+    return NamedFuncArg(block=block, ast_node=ast_node,
+                        name=name, type_qual=type_qual, default_value=default_value)
+
+
+def build_type_qual(block, ast_node):
+    # type_qual: NAME (template_def)? ;
+    type_name = ast_node_text(ast_node.children[0])
+    template_def = None
+    if len(ast_node.children) > 1:
+        template_def = build_template_def(block, ast_node.children[1])
+
+    return TypeQualifier(block, ast_node, type_name, template_def)
+
+
+def build_template_def(block, ast_node):
+    # template_def: '<' (template_args)? '>' ;
+    # template_args: NAME (',' NAME)* ','?;
+    if len(ast_node.children) == 2:
+        return TemplateDef(block, ast_node, [])
+
+    args = ast_node.children[1].children
+    arg_names = []
+    while args:
+        first_arg, *args = args
+        arg_names.append(ast_node_text(first_arg))
+        if args:
+            comma_, *args = args
+
+    return TemplateDef(block, ast_node, arg_names)
+
+
+def build_star_args(block, ast_node):
+    # star_args: type_qual? '*' NAME ;
+    type_qual = None
+    if len(ast_node.children) > 2:
+        type_qual = build_type_qual(block, ast_node.children[0])
+
+    name = ast_node_text(ast_node.children[-1])
+    return StarFuncArg(block, ast_node, name, type_qual)
+
+
+def build_kw_args(block, ast_node):
+    # named_kw_args: type_qual? '**' NAME ;
+    type_qual = None
+    if len(ast_node.children) > 2:
+        type_qual = build_type_qual(block, ast_node.children[0])
+
+    name = ast_node_text(ast_node.children[-1])
+    return StarKwFuncArg(block, ast_node, name, type_qual)
+
+
+def build_suite(block, ast_node):
+    #  suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT;
+    if len(ast_node.children) == 1:
+        return [ build_simple_stmt(block, ast_node.children[1]) ]
+
+    stmts = []
+    stmt_nodes = ast_node.children[2:-1]
+    for stmt_node in stmt_nodes:
+        stmt_instr = build_statement(block, stmt_node)
+        stmts.append(stmt_instr)
+
+    return stmts
 
 
 def term_text_equals(term_node, text):
@@ -930,10 +1082,12 @@ class Module(Block):
 
 
 class FuncDef(Block):
-    def __init__(self, ast=None, ast_node=None, vars=None, blocks=None, parent=None, program=None):
+    def __init__(self, ast=None, ast_node=None, vars=None, blocks=None, parent=None, program=None,
+                 name=None, params=None, returns=None):
         super().__init__(ast=ast, ast_node=ast_node, vars=vars, blocks=blocks, parent=parent, program=program)
-        self.return_dtype = None
-        self.args = None
+        self.name = name
+        self.params = params
+        self.returns = returns
 
 
 class Var(CodeNode):
@@ -1277,6 +1431,50 @@ class ForLoop(Block):
         self.iter_vars = iter_vars
         self.iter_src = iter_src
         self.filter_cond = filter_cond
+
+
+class ClassDef(Block):
+    def __init__(self, ast=None, ast_node=None, vars=None,
+                 blocks=None, parent=None, program=None,
+                 class_name=None, body=None, supers=None):
+        super().__init__(ast, ast_node, vars, blocks, parent, program)
+        self.class_name = class_name
+        self.body = body
+        self.supers = supers
+
+
+class NamedFuncArg(Instruction):
+    def __init__(self, block, ast_node, name:str, default_value=None, type_qual=None):
+        super().__init__(block, ast_node)
+        self.name = name
+        self.default_value = default_value
+        self.type_qual = type_qual
+
+
+class TypeQualifier(Instruction):
+    def __init__(self, block, ast_node, type_name:str, template_def:"TemplateDef"):
+        super().__init__(block, ast_node)
+        self.type_name = type_name
+        self.template_def = template_def
+
+
+class TemplateDef(Instruction):
+    def __init__(self, block, ast_node, args):
+        super().__init__(block, ast_node)
+        self.args = args
+
+
+class StarFuncArg(Instruction):
+    def __init__(self, block, ast_node, name, type_qual):
+        super().__init__(block, ast_node)
+        self.name = name
+        self.type_qual = type_qual
+
+class StarKwFuncArg(Instruction):
+    def __init__(self, block, ast_node, name, type_qual):
+        super().__init__(block, ast_node)
+        self.name = name
+        self.type_qual = type_qual
 
 
 def print_indent(str, indent):

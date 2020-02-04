@@ -1,0 +1,91 @@
+import native native_sys
+import re
+
+native_sys.on_import()
+
+class File:
+    str path, mode
+    handle = none
+    buffer = none
+    is_text = true
+
+    fn ctor():
+        buffer = native_sys.malloc(4096)
+
+    fn dtor():
+        close()
+
+    fn open():
+        handle = native_sys.open_file(path)
+        assert handle, f"Failed to open file {path}!"
+
+    fn close():
+        if handle:
+            native_sys.close_file(handle)
+            handle = none
+
+    fn read() -> str|bytes:
+        out = str() if is_text else bytes()
+        do:
+            count = native_sys.file_read(handle, max_chars, buffer)
+            out += buffer[0:count]
+        while count > 0
+
+        return out
+
+    fn write(s):
+        native_sys.file_write(handle, len(s), s.array._ptr)
+
+    fn readlines():
+        assert is_text, "Cannot read file lines binary mode."
+        return read().split("\n")
+
+    fn __iter__():
+        assert is_text, "Cannot iterate file lines in binary mode."
+
+        line_text = ""
+
+        do:
+            count = native_sys.file_read(handle, max_chars, buffer)
+
+            line_size = None
+            for i, char in enumerate(buffer):
+                if char == "\n":
+                    line_size = i
+                    break
+
+            if line_size is None:
+                line_text += buffer
+            else:
+                line_text += buffer[0:line_size]
+                yield line_text
+                line_text = ""
+
+        while count > 0
+
+        return out
+
+
+fn open(path, mode="rt"):
+    assert re.match(r'[rwa]\+?[bt]', mode), f"Invalid file mode {mode}"
+
+    if mode.endswith('t'):
+        mode = mode[:-1]
+
+    f = File(path=path, mode=mode, is_text=not mode.endswith('b'))
+    return f.open()
+
+
+stdout = File(path="STDOUT", mode="w", handle=native_sys.stdout)
+stdin = File(path="STDIN", mode="r", handle=native_sys.stdin)
+stderr = File(path="STDERR", mode="w", handle=native_sys.stderr)
+
+
+fn print(*args, File file=stdout):
+    for arg in args[1:]:
+        file.write(str(arg))
+        file.write(" ")
+
+
+fn println(*args, File file=stdout):
+    print(*args, "\n", file=file)

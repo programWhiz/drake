@@ -98,12 +98,66 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
-    # Enter a parse tree produced by DrakeParser#tfpdef.
-    def enterTfpdef(self, ctx:DrakeParser.TfpdefContext):
+    # Enter a parse tree produced by DrakeParser#typedarg_item.
+    def enterTypedarg_item(self, ctx:DrakeParser.Typedarg_itemContext):
         pass
 
-    # Exit a parse tree produced by DrakeParser#tfpdef.
-    def exitTfpdef(self, ctx:DrakeParser.TfpdefContext):
+    # Exit a parse tree produced by DrakeParser#typedarg_item.
+    def exitTypedarg_item(self, ctx:DrakeParser.Typedarg_itemContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#star_args.
+    def enterStar_args(self, ctx:DrakeParser.Star_argsContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#star_args.
+    def exitStar_args(self, ctx:DrakeParser.Star_argsContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#named_kw_args.
+    def enterNamed_kw_args(self, ctx:DrakeParser.Named_kw_argsContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#named_kw_args.
+    def exitNamed_kw_args(self, ctx:DrakeParser.Named_kw_argsContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#namedarg.
+    def enterNamedarg(self, ctx:DrakeParser.NamedargContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#namedarg.
+    def exitNamedarg(self, ctx:DrakeParser.NamedargContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#type_qual.
+    def enterType_qual(self, ctx:DrakeParser.Type_qualContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#type_qual.
+    def exitType_qual(self, ctx:DrakeParser.Type_qualContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#template_def.
+    def enterTemplate_def(self, ctx:DrakeParser.Template_defContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#template_def.
+    def exitTemplate_def(self, ctx:DrakeParser.Template_defContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#template_args.
+    def enterTemplate_args(self, ctx:DrakeParser.Template_argsContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#template_args.
+    def exitTemplate_args(self, ctx:DrakeParser.Template_argsContext):
         pass
 
 

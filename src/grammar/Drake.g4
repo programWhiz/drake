@@ -159,12 +159,16 @@ async_funcdef: ASYNC funcdef;
 funcdef: 'def' NAME parameters ('->' test)? ':' suite;
 
 parameters: '(' (typedargslist)? ')';
-typedargslist: (tfpdef ('=' test)? (',' tfpdef ('=' test)?)* (',' (
-        '*' (tfpdef)? (',' tfpdef ('=' test)?)* (',' ('**' tfpdef (',')?)?)?
-      | '**' tfpdef (',')?)?)?
-  | '*' (tfpdef)? (',' tfpdef ('=' test)?)* (',' ('**' tfpdef (',')?)?)?
-  | '**' tfpdef (',')?);
-tfpdef: NAME (':' test)?;
+
+typedargslist: typedarg_item (',' typedarg_item)* (',')? ;
+typedarg_item: namedarg | star_args | named_kw_args ;
+star_args: type_qual? '*' NAME ;
+named_kw_args: type_qual? '**' NAME ;
+namedarg: type_qual? NAME ('=' test) ? ;
+type_qual: dotted_name (template_def)? ;
+template_def: '<' (template_args)? '>' ;
+template_args: NAME (',' NAME)* ','?;
+
 varargslist: (vfpdef ('=' test)? (',' vfpdef ('=' test)?)* (',' (
         '*' (vfpdef)? (',' vfpdef ('=' test)?)* (',' ('**' vfpdef (',')?)?)?
       | '**' vfpdef (',')?)?)?
@@ -341,6 +345,7 @@ ELSE : 'else';
 WHILE : 'while';
 FOR : 'for';
 IN : 'in';
+CONST: 'const';
 TRY : 'try';
 FINALLY : 'finally';
 WITH : 'with';
