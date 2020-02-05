@@ -868,6 +868,8 @@ def build_compound_stmt(block, ast_stmt):
             build_if_statement(block, child)
         elif isinstance(child, DP.While_stmtContext):
             build_while_loop_statement(block, child)
+        elif isinstance(child, DP.Do_while_stmtContext):
+            build_do_while_loop_statement(block, child)
         elif isinstance(child, DP.For_stmtContext):
             build_forloop_statement(block, child)
         elif isinstance(child, DP.Try_stmtContext):
@@ -886,6 +888,31 @@ def build_compound_stmt(block, ast_stmt):
             raise_unknown_ast_node(block, child)
 
 
+def build_if_statement(block, ast_node):
+    #  if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ('else' ':' suite)?;
+    childs = ast_node.children
+    cond = build_test_stmt(block, childs[1])
+    if_block = IfCondition(cond=cond, parent=block, ast_node=ast_node)
+    build_suite(if_block, childs[3])
+
+    childs = childs[4:]
+    while childs:
+        if ast_node_text(childs[0]) == 'else':
+            else_block = ElseBlock(parent=block, ast_node=childs[0])
+            if_block.else_block = else_block
+            build_suite(else_block, childs[2])
+            break
+        else:
+            cond = build_test_stmt(block, childs[1])
+            elif_block = ElifCondition(parent=block, ast_node=childs[0], cond=cond)
+            build_suite(elif_block, childs[3])
+            childs = childs[4:]
+            if_block.add_elif(elif_block)
+
+    block.add_instr(if_block)
+    return if_block
+
+
 def build_classdef(block, ast_node):
     # 'class' NAME ('(' (arglist)? ')')? ':' suite;
     class_name = ast_node_text(ast_node.children[1])
@@ -899,6 +926,7 @@ def build_classdef(block, ast_node):
     class_instr = ClassDef(parent=block, ast_node=ast_node, class_name=class_name, supers=supers)
     class_instr.body = build_suite(class_instr, ast_node.children[-1])
     block.add_instr(class_instr)
+
 
 def build_func_def(block, ast_node):
     # funcdef: 'def' NAME parameters ('->' test)? ':' suite;
@@ -1470,11 +1498,45 @@ class StarFuncArg(Instruction):
         self.name = name
         self.type_qual = type_qual
 
+
 class StarKwFuncArg(Instruction):
     def __init__(self, block, ast_node, name, type_qual):
         super().__init__(block, ast_node)
         self.name = name
         self.type_qual = type_qual
+
+
+class WhileLoop(Block):
+    def __init__(self, *args, cond, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cond = cond
+
+
+class DoWhileLoop(Block):
+    def __init__(self, *args, cond, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cond = cond
+
+
+class IfCondition(Block):
+    def __init__(self, *args, cond=None, elif_blocks=None, else_block=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cond = cond
+        self.elif_blocks = elif_blocks or []
+        self.else_block = else_block
+
+    def add_elif(self, instr):
+        self.elif_blocks.append(instr)
+
+
+class ElifCondition(Block):
+    def __init__(self, *args, cond=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cond = cond
+
+
+class ElseBlock(Block):
+    pass
 
 
 def print_indent(str, indent):

@@ -34,5 +34,12 @@
 # z["foo"] = "dog"
 # z["bar"] = 1.234
 
-def my_func(int a = 3, foo.bar.MyClass<T> b, c=none, *my_args, **my_kwargs):
-    pass
+# def my_func(int a = 3, foo.bar.MyClass<T> b, c=none, *my_args, **my_kwargs):
+#     pass
+
+if false:
+    x = 3
+elif y <= z and q > r:
+    x = 4
+else:
+    x = 5

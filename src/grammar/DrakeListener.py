@@ -467,6 +467,15 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by DrakeParser#do_while_stmt.
+    def enterDo_while_stmt(self, ctx:DrakeParser.Do_while_stmtContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#do_while_stmt.
+    def exitDo_while_stmt(self, ctx:DrakeParser.Do_while_stmtContext):
+        pass
+
+
     # Enter a parse tree produced by DrakeParser#while_stmt.
     def enterWhile_stmt(self, ctx:DrakeParser.While_stmtContext):
         pass
