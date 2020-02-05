@@ -201,6 +201,15 @@ def build_star_expr(block, ast_node):
     return star
 
 
+def build_test_list(block, ast_node):
+    # testlist: test (',' test)* (',')?;
+    tests = []
+    for i in range(0, len(ast_node.children), 2):
+        test = build_test_stmt(block, ast_node.children[i])
+        tests.append(test)
+    return tests
+
+
 def build_test_stmt(block, ast_node):
     childs = ast_node.children
 
@@ -302,6 +311,7 @@ def nest_binary_operators(block, ast_node, instrs, op_cls):
         block.add_instr(left)
 
     return left
+
 
 def build_expression_list(block, ast_node):
     instr_list = []
@@ -904,6 +914,16 @@ def build_do_while_loop_statement(block, ast_node):
     build_suite(while_block, ast_node.children[2])
     block.add_instr(while_block)
     return while_block
+
+
+def build_forloop_statement(block, ast_node):
+    # for_stmt: 'for' exprlist 'in' testlist ':' suite ;
+    iter_vars = build_expression_list(block, ast_node.children[1])
+    iter_src = build_test_list(block, ast_node.children[3])
+    for_block = ForLoop(ast_node=ast_node, parent=block, iter_vars=iter_vars, iter_src=iter_src)
+    build_suite(for_block, ast_node.children[-1])
+    block.add_instr(for_block)
+    return for_block
 
 
 def build_if_statement(block, ast_node):

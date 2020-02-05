@@ -44,6 +44,9 @@
 # else:
 #     x = 5
 
-do:
-    x = 3
-while x < 100
+# do:
+#     x = 3
+# while x < 100
+
+for x in y:
+    x = x + y
