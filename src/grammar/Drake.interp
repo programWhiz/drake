@@ -3,7 +3,7 @@ null
 'isa'
 null
 null
-'def'
+'fn'
 'return'
 'raise'
 'from'
@@ -107,7 +107,7 @@ null
 null
 STRING
 INTEGER
-DEF
+FN
 RETURN
 RAISE
 FROM

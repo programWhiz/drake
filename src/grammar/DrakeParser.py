@@ -605,7 +605,7 @@ class DrakeParser ( Parser ):
 
     sharedContextCache = PredictionContextCache()
 
-    literalNames = [ "<INVALID>", "'isa'", "<INVALID>", "<INVALID>", "'def'", 
+    literalNames = [ "<INVALID>", "'isa'", "<INVALID>", "<INVALID>", "'fn'", 
                      "'return'", "'raise'", "'from'", "'import'", "'as'", 
                      "'global'", "'nonlocal'", "'assert'", "'if'", "'elif'", 
                      "'else'", "'while'", "'do'", "'for'", "'in'", "'const'", 
@@ -623,7 +623,7 @@ class DrakeParser ( Parser ):
                      "'-='", "'*='", "'@='", "'/='", "'%='", "'&='", "'|='", 
                      "'^='", "'<<='", "'>>='", "'**='", "'//='" ]
 
-    symbolicNames = [ "<INVALID>", "<INVALID>", "STRING", "INTEGER", "DEF", 
+    symbolicNames = [ "<INVALID>", "<INVALID>", "STRING", "INTEGER", "FN", 
                       "RETURN", "RAISE", "FROM", "IMPORT", "AS", "GLOBAL", 
                       "NONLOCAL", "ASSERT", "IF", "ELIF", "ELSE", "WHILE", 
                       "DO", "FOR", "IN", "CONST", "TRY", "FINALLY", "WITH", 
@@ -801,7 +801,7 @@ class DrakeParser ( Parser ):
     T__0=1
     STRING=2
     INTEGER=3
-    DEF=4
+    FN=4
     RETURN=5
     RAISE=6
     FROM=7
@@ -957,7 +957,7 @@ class DrakeParser ( Parser ):
                 self.state = 243
                 self.simple_stmt()
                 pass
-            elif token in [DrakeParser.DEF, DrakeParser.IF, DrakeParser.WHILE, DrakeParser.DO, DrakeParser.FOR, DrakeParser.TRY, DrakeParser.WITH, DrakeParser.CLASS, DrakeParser.ASYNC, DrakeParser.AT]:
+            elif token in [DrakeParser.FN, DrakeParser.IF, DrakeParser.WHILE, DrakeParser.DO, DrakeParser.FOR, DrakeParser.TRY, DrakeParser.WITH, DrakeParser.CLASS, DrakeParser.ASYNC, DrakeParser.AT]:
                 self.enterOuterAlt(localctx, 3)
                 self.state = 244
                 self.compound_stmt()
@@ -1021,7 +1021,7 @@ class DrakeParser ( Parser ):
             self.state = 253
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while (((_la) & ~0x3f) == 0 and ((1 << _la) & ((1 << DrakeParser.STRING) | (1 << DrakeParser.INTEGER) | (1 << DrakeParser.DEF) | (1 << DrakeParser.RETURN) | (1 << DrakeParser.RAISE) | (1 << DrakeParser.FROM) | (1 << DrakeParser.IMPORT) | (1 << DrakeParser.GLOBAL) | (1 << DrakeParser.NONLOCAL) | (1 << DrakeParser.ASSERT) | (1 << DrakeParser.IF) | (1 << DrakeParser.WHILE) | (1 << DrakeParser.DO) | (1 << DrakeParser.FOR) | (1 << DrakeParser.TRY) | (1 << DrakeParser.WITH) | (1 << DrakeParser.LAMBDA) | (1 << DrakeParser.NOT) | (1 << DrakeParser.NONE) | (1 << DrakeParser.TRUE) | (1 << DrakeParser.FALSE) | (1 << DrakeParser.CLASS) | (1 << DrakeParser.YIELD) | (1 << DrakeParser.DEL) | (1 << DrakeParser.PASS) | (1 << DrakeParser.CONTINUE) | (1 << DrakeParser.BREAK) | (1 << DrakeParser.ASYNC) | (1 << DrakeParser.AWAIT) | (1 << DrakeParser.NEWLINE) | (1 << DrakeParser.NAME) | (1 << DrakeParser.FLOAT_NUMBER) | (1 << DrakeParser.IMAG_NUMBER) | (1 << DrakeParser.ELLIPSIS) | (1 << DrakeParser.STAR) | (1 << DrakeParser.OPEN_PAREN) | (1 << DrakeParser.OPEN_BRACK))) != 0) or ((((_la - 68)) & ~0x3f) == 0 and ((1 << (_la - 68)) & ((1 << (DrakeParser.ADD - 68)) | (1 << (DrakeParser.MINUS - 68)) | (1 << (DrakeParser.NOT_OP - 68)) | (1 << (DrakeParser.OPEN_BRACE - 68)) | (1 << (DrakeParser.AT - 68)))) != 0):
+            while (((_la) & ~0x3f) == 0 and ((1 << _la) & ((1 << DrakeParser.STRING) | (1 << DrakeParser.INTEGER) | (1 << DrakeParser.FN) | (1 << DrakeParser.RETURN) | (1 << DrakeParser.RAISE) | (1 << DrakeParser.FROM) | (1 << DrakeParser.IMPORT) | (1 << DrakeParser.GLOBAL) | (1 << DrakeParser.NONLOCAL) | (1 << DrakeParser.ASSERT) | (1 << DrakeParser.IF) | (1 << DrakeParser.WHILE) | (1 << DrakeParser.DO) | (1 << DrakeParser.FOR) | (1 << DrakeParser.TRY) | (1 << DrakeParser.WITH) | (1 << DrakeParser.LAMBDA) | (1 << DrakeParser.NOT) | (1 << DrakeParser.NONE) | (1 << DrakeParser.TRUE) | (1 << DrakeParser.FALSE) | (1 << DrakeParser.CLASS) | (1 << DrakeParser.YIELD) | (1 << DrakeParser.DEL) | (1 << DrakeParser.PASS) | (1 << DrakeParser.CONTINUE) | (1 << DrakeParser.BREAK) | (1 << DrakeParser.ASYNC) | (1 << DrakeParser.AWAIT) | (1 << DrakeParser.NEWLINE) | (1 << DrakeParser.NAME) | (1 << DrakeParser.FLOAT_NUMBER) | (1 << DrakeParser.IMAG_NUMBER) | (1 << DrakeParser.ELLIPSIS) | (1 << DrakeParser.STAR) | (1 << DrakeParser.OPEN_PAREN) | (1 << DrakeParser.OPEN_BRACK))) != 0) or ((((_la - 68)) & ~0x3f) == 0 and ((1 << (_la - 68)) & ((1 << (DrakeParser.ADD - 68)) | (1 << (DrakeParser.MINUS - 68)) | (1 << (DrakeParser.NOT_OP - 68)) | (1 << (DrakeParser.OPEN_BRACE - 68)) | (1 << (DrakeParser.AT - 68)))) != 0):
                 self.state = 251
                 self._errHandler.sync(self)
                 token = self._input.LA(1)
@@ -1029,7 +1029,7 @@ class DrakeParser ( Parser ):
                     self.state = 249
                     self.match(DrakeParser.NEWLINE)
                     pass
-                elif token in [DrakeParser.STRING, DrakeParser.INTEGER, DrakeParser.DEF, DrakeParser.RETURN, DrakeParser.RAISE, DrakeParser.FROM, DrakeParser.IMPORT, DrakeParser.GLOBAL, DrakeParser.NONLOCAL, DrakeParser.ASSERT, DrakeParser.IF, DrakeParser.WHILE, DrakeParser.DO, DrakeParser.FOR, DrakeParser.TRY, DrakeParser.WITH, DrakeParser.LAMBDA, DrakeParser.NOT, DrakeParser.NONE, DrakeParser.TRUE, DrakeParser.FALSE, DrakeParser.CLASS, DrakeParser.YIELD, DrakeParser.DEL, DrakeParser.PASS, DrakeParser.CONTINUE, DrakeParser.BREAK, DrakeParser.ASYNC, DrakeParser.AWAIT, DrakeParser.NAME, DrakeParser.FLOAT_NUMBER, DrakeParser.IMAG_NUMBER, DrakeParser.ELLIPSIS, DrakeParser.STAR, DrakeParser.OPEN_PAREN, DrakeParser.OPEN_BRACK, DrakeParser.ADD, DrakeParser.MINUS, DrakeParser.NOT_OP, DrakeParser.OPEN_BRACE, DrakeParser.AT]:
+                elif token in [DrakeParser.STRING, DrakeParser.INTEGER, DrakeParser.FN, DrakeParser.RETURN, DrakeParser.RAISE, DrakeParser.FROM, DrakeParser.IMPORT, DrakeParser.GLOBAL, DrakeParser.NONLOCAL, DrakeParser.ASSERT, DrakeParser.IF, DrakeParser.WHILE, DrakeParser.DO, DrakeParser.FOR, DrakeParser.TRY, DrakeParser.WITH, DrakeParser.LAMBDA, DrakeParser.NOT, DrakeParser.NONE, DrakeParser.TRUE, DrakeParser.FALSE, DrakeParser.CLASS, DrakeParser.YIELD, DrakeParser.DEL, DrakeParser.PASS, DrakeParser.CONTINUE, DrakeParser.BREAK, DrakeParser.ASYNC, DrakeParser.AWAIT, DrakeParser.NAME, DrakeParser.FLOAT_NUMBER, DrakeParser.IMAG_NUMBER, DrakeParser.ELLIPSIS, DrakeParser.STAR, DrakeParser.OPEN_PAREN, DrakeParser.OPEN_BRACK, DrakeParser.ADD, DrakeParser.MINUS, DrakeParser.NOT_OP, DrakeParser.OPEN_BRACE, DrakeParser.AT]:
                     self.state = 250
                     self.stmt()
                     pass
@@ -1287,7 +1287,7 @@ class DrakeParser ( Parser ):
                 self.state = 284
                 self.classdef()
                 pass
-            elif token in [DrakeParser.DEF]:
+            elif token in [DrakeParser.FN]:
                 self.state = 285
                 self.funcdef()
                 pass
@@ -1394,7 +1394,7 @@ class DrakeParser ( Parser ):
         try:
             self.enterOuterAlt(localctx, 1)
             self.state = 292
-            self.match(DrakeParser.DEF)
+            self.match(DrakeParser.FN)
             self.state = 293
             self.match(DrakeParser.NAME)
             self.state = 294
@@ -2283,7 +2283,7 @@ class DrakeParser ( Parser ):
                 self.state = 450
                 self.simple_stmt()
                 pass
-            elif token in [DrakeParser.DEF, DrakeParser.IF, DrakeParser.WHILE, DrakeParser.DO, DrakeParser.FOR, DrakeParser.TRY, DrakeParser.WITH, DrakeParser.CLASS, DrakeParser.ASYNC, DrakeParser.AT]:
+            elif token in [DrakeParser.FN, DrakeParser.IF, DrakeParser.WHILE, DrakeParser.DO, DrakeParser.FOR, DrakeParser.TRY, DrakeParser.WITH, DrakeParser.CLASS, DrakeParser.ASYNC, DrakeParser.AT]:
                 self.enterOuterAlt(localctx, 2)
                 self.state = 451
                 self.compound_stmt()
@@ -4063,7 +4063,7 @@ class DrakeParser ( Parser ):
                 self.state = 649
                 self.with_stmt()
                 pass
-            elif token in [DrakeParser.DEF]:
+            elif token in [DrakeParser.FN]:
                 self.enterOuterAlt(localctx, 7)
                 self.state = 650
                 self.funcdef()
@@ -4140,7 +4140,7 @@ class DrakeParser ( Parser ):
             self.state = 660
             self._errHandler.sync(self)
             token = self._input.LA(1)
-            if token in [DrakeParser.DEF]:
+            if token in [DrakeParser.FN]:
                 self.state = 657
                 self.funcdef()
                 pass
@@ -4741,7 +4741,7 @@ class DrakeParser ( Parser ):
                     self.state = 747 
                     self._errHandler.sync(self)
                     _la = self._input.LA(1)
-                    if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & ((1 << DrakeParser.STRING) | (1 << DrakeParser.INTEGER) | (1 << DrakeParser.DEF) | (1 << DrakeParser.RETURN) | (1 << DrakeParser.RAISE) | (1 << DrakeParser.FROM) | (1 << DrakeParser.IMPORT) | (1 << DrakeParser.GLOBAL) | (1 << DrakeParser.NONLOCAL) | (1 << DrakeParser.ASSERT) | (1 << DrakeParser.IF) | (1 << DrakeParser.WHILE) | (1 << DrakeParser.DO) | (1 << DrakeParser.FOR) | (1 << DrakeParser.TRY) | (1 << DrakeParser.WITH) | (1 << DrakeParser.LAMBDA) | (1 << DrakeParser.NOT) | (1 << DrakeParser.NONE) | (1 << DrakeParser.TRUE) | (1 << DrakeParser.FALSE) | (1 << DrakeParser.CLASS) | (1 << DrakeParser.YIELD) | (1 << DrakeParser.DEL) | (1 << DrakeParser.PASS) | (1 << DrakeParser.CONTINUE) | (1 << DrakeParser.BREAK) | (1 << DrakeParser.ASYNC) | (1 << DrakeParser.AWAIT) | (1 << DrakeParser.NAME) | (1 << DrakeParser.FLOAT_NUMBER) | (1 << DrakeParser.IMAG_NUMBER) | (1 << DrakeParser.ELLIPSIS) | (1 << DrakeParser.STAR) | (1 << DrakeParser.OPEN_PAREN) | (1 << DrakeParser.OPEN_BRACK))) != 0) or ((((_la - 68)) & ~0x3f) == 0 and ((1 << (_la - 68)) & ((1 << (DrakeParser.ADD - 68)) | (1 << (DrakeParser.MINUS - 68)) | (1 << (DrakeParser.NOT_OP - 68)) | (1 << (DrakeParser.OPEN_BRACE - 68)) | (1 << (DrakeParser.AT - 68)))) != 0)):
+                    if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & ((1 << DrakeParser.STRING) | (1 << DrakeParser.INTEGER) | (1 << DrakeParser.FN) | (1 << DrakeParser.RETURN) | (1 << DrakeParser.RAISE) | (1 << DrakeParser.FROM) | (1 << DrakeParser.IMPORT) | (1 << DrakeParser.GLOBAL) | (1 << DrakeParser.NONLOCAL) | (1 << DrakeParser.ASSERT) | (1 << DrakeParser.IF) | (1 << DrakeParser.WHILE) | (1 << DrakeParser.DO) | (1 << DrakeParser.FOR) | (1 << DrakeParser.TRY) | (1 << DrakeParser.WITH) | (1 << DrakeParser.LAMBDA) | (1 << DrakeParser.NOT) | (1 << DrakeParser.NONE) | (1 << DrakeParser.TRUE) | (1 << DrakeParser.FALSE) | (1 << DrakeParser.CLASS) | (1 << DrakeParser.YIELD) | (1 << DrakeParser.DEL) | (1 << DrakeParser.PASS) | (1 << DrakeParser.CONTINUE) | (1 << DrakeParser.BREAK) | (1 << DrakeParser.ASYNC) | (1 << DrakeParser.AWAIT) | (1 << DrakeParser.NAME) | (1 << DrakeParser.FLOAT_NUMBER) | (1 << DrakeParser.IMAG_NUMBER) | (1 << DrakeParser.ELLIPSIS) | (1 << DrakeParser.STAR) | (1 << DrakeParser.OPEN_PAREN) | (1 << DrakeParser.OPEN_BRACK))) != 0) or ((((_la - 68)) & ~0x3f) == 0 and ((1 << (_la - 68)) & ((1 << (DrakeParser.ADD - 68)) | (1 << (DrakeParser.MINUS - 68)) | (1 << (DrakeParser.NOT_OP - 68)) | (1 << (DrakeParser.OPEN_BRACE - 68)) | (1 << (DrakeParser.AT - 68)))) != 0)):
                         break
 
                 self.state = 749

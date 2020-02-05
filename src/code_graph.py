@@ -153,8 +153,82 @@ def build_simple_stmt(block, ast_stmt):
                     build_block_local_import(block, child)
             elif isinstance(child, DP.Pass_stmtContext):
                 continue  # skip instruction
+            elif isinstance(child, DP.Flow_stmtContext):
+                build_flow_statement(block, child)
             else:
                 raise_unknown_ast_node(block, child)
+
+
+def build_flow_statement(block, ast_node):
+    """
+    flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt;
+    """
+    node = ast_node.children[0]
+    if isinstance(node, DP.Break_stmtContext):
+        instr = Break(block, node)
+        block.add_instr(instr)
+    elif isinstance(node, DP.Continue_stmtContext):
+        instr = Continue(block, node)
+        block.add_instr(instr)
+    elif isinstance(node, DP.Yield_stmtContext):
+        instr = build_yield_stmt(block, node)
+    elif isinstance(node, DP.Raise_stmtContext):
+        instr = build_raise_stmt(block, node)
+    elif isinstance(node, DP.Return_stmtContext):
+        instr = build_return_stmt(block, node)
+    else:
+        raise_unknown_ast_node(block, node)
+
+    return instr
+
+
+def build_return_stmt(block, ast_node):
+    # return_stmt: 'return' (testlist)?;
+    instr = Return(block, ast_node)
+    if len(ast_node.children) > 1:
+        instr.expr = build_test_list(block, ast_node.children[1])
+    block.add_instr(instr)
+    return instr
+
+
+def build_raise_stmt(block, ast_node):
+    # raise_stmt: 'raise' (test ('from' test)?)?;
+    instr = Raise(block, ast_node)
+    block.add_instr(instr)
+
+    childs = ast_node.children
+
+    if len(childs) >= 2:  # raise e
+        instr.expr = build_test_stmt(block, childs[1])
+
+    if len(childs) >= 3:  # raise ParseException from e
+        instr.from_expr = build_test_stmt(block, childs[3])
+
+    return instr
+
+
+def build_yield_stmt(block, ast_node):
+    # yield_stmt : yield_expr ;
+    return build_yield_expr(block, ast_node.children[0])
+
+
+def build_yield_expr(block, ast_node):
+    # yield_expr: 'yield' (yield_arg)?;
+    instr = Yield(block=block, ast_node=ast_node)
+    block.add_instr(instr)
+
+    if len(ast_node.children) >= 2:
+        instr.expr = build_yield_arg(block, ast_node.children[1])
+
+    return instr
+
+
+def build_yield_arg(block, ast_node):
+    # yield_arg: 'from' test | testlist;
+    if len(ast_node.children) == 1:  # yield <x>
+        return build_test_list(block, ast_node.children[0])
+    else:  # yield from <x>
+        return build_test_stmt(block, ast_node.children[1])
 
 
 def build_expr_stmt(block, ast_expr):
@@ -926,6 +1000,10 @@ def build_forloop_statement(block, ast_node):
     return for_block
 
 
+def build_try_catch_statement(block, ast_node):
+    pass
+
+
 def build_if_statement(block, ast_node):
     #  if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ('else' ':' suite)?;
     childs = ast_node.children
@@ -1573,6 +1651,31 @@ class ElifCondition(Block):
 
 
 class ElseBlock(Block):
+    pass
+
+
+class Yield(Instruction):
+    def __init__(self, block, ast_node, expr=None):
+        super().__init__(block, ast_node)
+        self.expr = None
+
+
+class Return(Instruction):
+    def __init__(self, block, ast_node, expr=None):
+        super().__init__(block, ast_node)
+        self.expr = None
+
+
+class Raise(Instruction):
+    def __init__(self, block, ast_node, expr=None, from_expr=None):
+        super().__init__(block, ast_node)
+        self.expr = None
+        self.from_expr = from_expr
+
+class Break(Instruction):
+    pass
+
+class Continue(Instruction):
     pass
 
 

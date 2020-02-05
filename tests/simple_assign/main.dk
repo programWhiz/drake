@@ -48,5 +48,17 @@
 #     x = 3
 # while x < 100
 
-for x in y:
+fn range(int stop):
+    yield from range(0, stop, 1)
+
+fn range(int start, int stop):
+    yield from range(start, stop, 1)
+
+fn range(int start, int stop, int step):
+    i = start
+    while i < stop:
+        yield i
+        i = i + step
+
+for x in range(10):
     x = x + y

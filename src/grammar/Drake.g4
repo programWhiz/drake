@@ -156,7 +156,7 @@ decorators: decorator+;
 decorated: decorators (classdef | funcdef | async_funcdef);
 
 async_funcdef: ASYNC funcdef;
-funcdef: 'def' NAME parameters ('->' test)? ':' suite;
+funcdef: 'fn' NAME parameters ('->' test)? ':' suite;
 
 parameters: '(' (typedargslist)? ')';
 
@@ -329,7 +329,7 @@ INTEGER
  | BIN_INTEGER
  ;
 
-DEF : 'def';
+FN : 'fn';
 RETURN : 'return';
 RAISE : 'raise';
 FROM : 'from';

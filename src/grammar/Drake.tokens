@@ -1,7 +1,7 @@
 T__0=1
 STRING=2
 INTEGER=3
-DEF=4
+FN=4
 RETURN=5
 RAISE=6
 FROM=7
@@ -100,7 +100,7 @@ UNKNOWN_CHAR=99
 INDENT=100
 DEDENT=101
 'isa'=1
-'def'=4
+'fn'=4
 'return'=5
 'raise'=6
 'from'=7
