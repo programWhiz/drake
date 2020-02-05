@@ -37,9 +37,13 @@
 # def my_func(int a = 3, foo.bar.MyClass<T> b, c=none, *my_args, **my_kwargs):
 #     pass
 
-if false:
+# if false:
+#     x = 3
+# elif y <= z and q > r:
+#     x = 4
+# else:
+#     x = 5
+
+do:
     x = 3
-elif y <= z and q > r:
-    x = 4
-else:
-    x = 5
+while x < 100

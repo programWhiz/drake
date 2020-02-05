@@ -215,7 +215,7 @@ assert_stmt: 'assert' test (',' test)?;
 compound_stmt: if_stmt | do_while_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt;
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt);
 if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ('else' ':' suite)?;
-do_while_stmt: 'do' suite 'while' test ;
+do_while_stmt: 'do' ':' suite 'while' test ;
 while_stmt: 'while' test ':' suite ;
 for_stmt: 'for' exprlist 'in' testlist ':' suite ;
 try_stmt: ('try' ':' suite
@@ -342,6 +342,7 @@ IF : 'if';
 ELIF : 'elif';
 ELSE : 'else';
 WHILE : 'while';
+DO : 'do' ;
 FOR : 'for';
 IN : 'in';
 CONST: 'const';

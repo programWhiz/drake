@@ -873,7 +873,7 @@ def build_compound_stmt(block, ast_stmt):
         elif isinstance(child, DP.For_stmtContext):
             build_forloop_statement(block, child)
         elif isinstance(child, DP.Try_stmtContext):
-            build_forloop_statement(block, child)
+            build_try_catch_statement(block, child)
         elif isinstance(child, DP.With_stmtContext):
             build_with_statement(block, child)
         elif isinstance(child, DP.FuncdefContext):
@@ -886,6 +886,24 @@ def build_compound_stmt(block, ast_stmt):
             build_async_stmt(block, child)
         else:
             raise_unknown_ast_node(block, child)
+
+
+def build_while_loop_statement(block, ast_node):
+    # while_stmt: 'while' test ':' suite;
+    cond = build_test_stmt(block, ast_node.children[1])
+    while_block = WhileLoop(parent=block, ast_node=ast_node, cond=cond)
+    build_suite(while_block, ast_node.children[3])
+    block.add_instr(while_block)
+    return while_block
+
+
+def build_do_while_loop_statement(block, ast_node):
+    # do_while_stmt: 'do' ':' suite 'while' test ;
+    cond = build_test_stmt(block, ast_node.children[-1])
+    while_block = DoWhileLoop(parent=block, ast_node=ast_node, cond=cond)
+    build_suite(while_block, ast_node.children[2])
+    block.add_instr(while_block)
+    return while_block
 
 
 def build_if_statement(block, ast_node):
@@ -911,7 +929,6 @@ def build_if_statement(block, ast_node):
 
     block.add_instr(if_block)
     return if_block
-
 
 def build_classdef(block, ast_node):
     # 'class' NAME ('(' (arglist)? ')')? ':' suite;
