@@ -208,25 +208,6 @@ class MultiComparison(Instruction):
         self.comps = comps
 
 
-multi_comparison_operator_classes = {
-    ">": GreaterThan,
-    "<": LessThan,
-    ">=": GreaterThanEqual,
-    "<=": LessThanEqual,
-    "==": Equals,
-}
-
-binary_comparison_operator_classes = {
-    "!=": NotEquals,
-    "is": CompareIs,
-    "is not": CompareIsNot,
-    "in": CompareNotIn,
-    "not in": CompareNotIn,
-    "isa": CompareIsA,
-    **multi_comparison_operator_classes
-}
-
-
 class BitwiseOr(BinaryOp):
     pass
 
@@ -259,12 +240,6 @@ class ArithMinus(BinaryOp):
     pass
 
 
-arith_operator_classes = {
-    '+': ArithPlus,
-    '-': ArithMinus,
-}
-
-
 class ArithMultiply(BinaryOp):
     pass
 
@@ -281,14 +256,6 @@ class ArithIntDivide(BinaryOp):
     pass
 
 
-term_operator_classes = {
-    '*': ArithMultiply,
-    '/': ArithDivide,
-    '%': ArithModulo,
-    '//': ArithIntDivide,
-}
-
-
 class PositiveUnary(UnaryOp):
     pass
 
@@ -299,13 +266,6 @@ class NegateUnary(UnaryOp):
 
 class BitwiseNot(UnaryOp):
     pass
-
-
-factor_operator_classes = {
-    '+': PositiveUnary,
-    '-': NegateUnary,
-    '~': BitwiseNot,
-}
 
 
 class FuncCall(Instruction):
@@ -526,3 +486,52 @@ def print_code_tree(node, indent=0, prefix="", visited=None):
 
         else:
             print_indent(f"{key}: {value}", indent)
+
+
+term_operator_classes = {
+    '*': ArithMultiply,
+    '/': ArithDivide,
+    '%': ArithModulo,
+    '//': ArithIntDivide,
+}
+
+arith_operator_classes = {
+    '+': ArithPlus,
+    '-': ArithMinus,
+}
+
+factor_operator_classes = {
+    '+': PositiveUnary,
+    '-': NegateUnary,
+    '~': BitwiseNot,
+}
+
+math_operator_classes = {
+    **arith_operator_classes,
+    **term_operator_classes,
+    '<<': BitShiftLeft,
+    '>>': BitShiftRight,
+    '|': BitwiseOr,
+    '&': BitwiseAnd,
+    '^': BitwiseXOr,
+    '**': ArithPower,
+}
+
+multi_comparison_operator_classes = {
+    ">": GreaterThan,
+    "<": LessThan,
+    ">=": GreaterThanEqual,
+    "<=": LessThanEqual,
+    "==": Equals,
+}
+
+binary_comparison_operator_classes = {
+    "!=": NotEquals,
+    "is": CompareIs,
+    "is not": CompareIsNot,
+    "in": CompareNotIn,
+    "not in": CompareNotIn,
+    "isa": CompareIsA,
+    **multi_comparison_operator_classes
+}
+

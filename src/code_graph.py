@@ -237,8 +237,36 @@ def build_expr_stmt(block, ast_expr):
     for child in ast_expr.children:
         if isinstance(child, DP.Assign_stmtContext):
             build_assign_stmt(block, child)
+        elif isinstance(child, DP.Augassign_stmtContext):
+            build_aug_assign_stmt(block, child)
+        elif isinstance(child, DP.Anassign_stmtContext):
+            build_anassign_stmt(block, child)
         else:
             raise_unknown_ast_node(block, child)
+
+
+def build_aug_assign_stmt(block, ast_node):
+    # augassign_stmt: testlist_star_expr augassign (yield_expr | testlist);
+    # augassign: ('+=' | '-=' | '*=' | '@=' | '/=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>=' | '**=' | '//=');
+
+    left_instr = build_test_star_stmt(block, ast_node.children[0])
+    aug_node = ast_node.children[1]
+
+    if isinstance(ast_node.children[-1], DP.TestlistContext):
+        right_instr = build_test_list(block, ast_node.children[-1])
+    else:
+        right_instr = build_yield_expr(block, ast_node.children[-1])
+
+    # get the operator without the "=" at the end
+    op_text = ast_node_text(aug_node)[:-1]
+    op_cls = math_operator_classes[op_text]
+    op_instr = op_cls(block=block, ast_node=aug_node, left_instr=left_instr, right_instr=right_instr)
+    block.add_instr(op_instr)
+
+    assign = Assign(block=block, ast_node=aug_node, left_instr=left_instr, right_instr=op_instr)
+    block.add_instr(assign)
+
+    return assign
 
 
 def build_assign_stmt(block, ast_node):

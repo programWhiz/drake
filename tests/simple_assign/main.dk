@@ -61,4 +61,8 @@ fn range(int start, int stop, int step):
         i = i + step
 
 for x in range(10):
-    x = x + y
+    x += 4
+    x *= 4
+    x -= 4
+    x //= 4
+    x **= 4
