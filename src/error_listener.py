@@ -19,13 +19,13 @@ class DrakeErrorListener(ErrorListener):
         raise ParseException(error_msg)
 
     def reportAmbiguity(self, recognizer, dfa, startIndex, stopIndex, exact, ambigAlts, configs):
-        raise ParseException(f"Ambiguous syntax in {self.file_path} at line {line} col {column}: {msg}")
+        pass
 
     def reportAttemptingFullContext(self, recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs):
-        raise ParseException(f"Syntax error in {self.file_path} at line {line} col {column}: {msg}")
+        pass
 
     def reportContextSensitivity(self, recognizer, dfa, startIndex, stopIndex, prediction, configs):
-        raise ParseException(f"Syntax error in {self.file_path} at line {line} col {column}: {msg}")
+        pass
 
 
 def format_source_code_error(source:str, lineno:int, colno:int, scope:int=4):

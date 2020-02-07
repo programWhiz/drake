@@ -6,6 +6,8 @@ from src.error_listener import format_source_code_error
 from src.module_search import find_module_imports, find_symbol_imports, ast_node_text
 from src.grammar.DrakeParser import DrakeParser as DP
 from src.code_graph_types import *
+from src.resolve_graph import resolve_code_graph
+from src.type_calc import calculate_types
 
 
 def init_code_program(ast):
@@ -36,6 +38,7 @@ def compile_module_cached(program, abs_name, abs_path):
     module.program = program
 
     build_code_graph(module)
+    resolve_code_graph(module)
 
     print("==== Printing code tree for module: ", module.abs_name, "====")
     print_code_tree(module)
@@ -64,12 +67,23 @@ def build_code_graph(module):
                 print_source_code_error(symbol['ast_node'])
                 raise SymbolNotFound(err)
 
-    build_block(module)
-
+    build_block(module, sys.stdout)
     print_code_tree(module)
+    calculate_types(module)
 
 
-def build_block(block):
+id_counter = 0
+
+def next_id():
+    global id_counter
+    id_counter += 1
+    return f"{id_counter:x}"
+
+
+def build_block(block, f):
+    block_id = f"block_{next_id()}"
+    print("begin_block", block_id, file=f)
+
     for child in block.ast_node.children:
         if isinstance(child, DP.StmtContext):
             build_statement(block, child)
@@ -77,6 +91,8 @@ def build_block(block):
             continue  # end of file
         else:
             raise_unknown_ast_node(block, child)
+
+    print("end_block", block_id, file=f)
 
 
 def ast_is_empty(ast_node):
@@ -576,7 +592,6 @@ def build_atom_trailer(block, atom, ast_node):
     elif first_char == '.':
         bare_name = BareName(block=block, ast_node=ast_node.children[1], text=ast_node_text(ast_node.children[1]))
         dot_op = DotOperator(block=block, ast_node=ast_node, left_instr=atom, right_instr=bare_name)
-        block.add_instr(dot_op)
         return dot_op
     elif first_char == '(':  # function call
         args = []
@@ -645,10 +660,7 @@ def build_subscript_list(block, left_instr, ast_node):
             comma, *childs = childs
 
     right_instr = SubscriptList(block=block, ast_node=ast_node, instrs=subscripts)
-    block.add_instr(right_instr)
-
     instr = GetItem(block=block, ast_node=ast_node, left_instr=left_instr, right_instr=right_instr)
-    block.add_instr(instr)
     return instr
 
 
@@ -714,7 +726,6 @@ def build_literal(block, ast_node):
         raise_unknown_ast_node(block, ast_node)
 
     literal = Literal(block=block, ast_node=child.children[0], dtype=dtype, value=value)
-    block.add_instr(literal)
     return literal
 
 

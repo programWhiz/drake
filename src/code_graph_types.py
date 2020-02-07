@@ -1,48 +1,56 @@
 import antlr4
 
+
 class CodeNode:
-    pass
+    def calc_types(self):
+        pass
 
 
 class Program(CodeNode):
     def __init__(self):
+        self.build_dir = ""
         self.search_paths = []
         self.modules = { }
 
+    def calc_types(self):
+        for module in self.modules.values():
+            module.calc_types()
+
 
 class Block(CodeNode):
-    def __init__(self, ast=None, ast_node=None, vars=None, blocks=None, parent=None, program=None):
+    def __init__(self, ast=None, ast_node=None, local_vars=None,
+                 global_vars=None, blocks=None, parent=None, program=None):
         self.program = program
         self.parent = parent
         self.ast = ast
         self.ast_node = ast_node
-        self.vars = vars or { }
+        self.local_vars = local_vars or { }
+        self.global_vars = global_vars or { }
         self.blocks = blocks or []
         self.instructions = []
-
-    def get_or_create_var(self, name, ast_node=None):
-        if name in self.vars:
-            return self.vars[name]
-        else:
-            assert ast_node, "AST Node required to create variable"
-            var = Var(block=self, program=self.program, name=name, ast_node=ast_node)
-            self.vars[name] = var
 
     def add_instr(self, instr):
         self.instructions.append(instr)
 
+        if isinstance(instr, Block):
+            self.blocks.append(instr)
+            instr.parent = self
+
+    def calc_types(self):
+        for instr in self.instructions:
+            instr.calc_type()
+
 
 class Module(Block):
-    def __init__(self, ast=None, abs_path=None, abs_name=None, vars=None, blocks=None):
-        super().__init__(ast=ast, ast_node=ast, vars=vars, blocks=blocks)
+    def __init__(self, *args, abs_path=None, abs_name=None, **kwargs):
+        super().__init__(*args, **kwargs)
         self.abs_path = abs_path
         self.abs_name = abs_name
 
 
 class FuncDef(Block):
-    def __init__(self, ast=None, ast_node=None, vars=None, blocks=None, parent=None, program=None,
-                 name=None, params=None, returns=None):
-        super().__init__(ast=ast, ast_node=ast_node, vars=vars, blocks=blocks, parent=parent, program=program)
+    def __init__(self, *args, name=None, params=None, returns=None, **kwargs):
+        super().__init__(*args, **kwargs)
         self.name = name
         self.params = params
         self.returns = returns
@@ -342,20 +350,16 @@ class ListComprehension(SetComprehension):
 
 
 class ForLoop(Block):
-    def __init__(self, ast=None, ast_node=None, vars=None,
-                 blocks=None, parent=None, program=None,
-                 iter_vars=None, iter_src=None, filter_cond=None):
-        super().__init__(ast, ast_node, vars, blocks, parent, program)
+    def __init__(self, *args, iter_vars=None, iter_src=None, filter_cond=None, **kwargs):
+        super().__init__(*args, **kwargs)
         self.iter_vars = iter_vars
         self.iter_src = iter_src
         self.filter_cond = filter_cond
 
 
 class ClassDef(Block):
-    def __init__(self, ast=None, ast_node=None, vars=None,
-                 blocks=None, parent=None, program=None,
-                 class_name=None, body=None, supers=None):
-        super().__init__(ast, ast_node, vars, blocks, parent, program)
+    def __init__(self, *args, class_name=None, body=None, supers=None, **kwargs):
+        super().__init__(*args, **kwargs)
         self.class_name = class_name
         self.body = body
         self.supers = supers
@@ -418,11 +422,23 @@ class IfCondition(Block):
     def add_elif(self, instr):
         self.elif_blocks.append(instr)
 
+    def calc_types(self):
+        super().calc_types()
+        self.cond.calc_types()
+        for block in self.elif_blocks:
+            block.calc_types()
+        if self.else_block:
+            self.else_block.calc_types()
+
 
 class ElifCondition(Block):
     def __init__(self, *args, cond=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.cond = cond
+
+    def calc_types(self):
+        super().calc_types()
+        self.cond.calc_types()
 
 
 class ElseBlock(Block):
@@ -434,11 +450,19 @@ class Yield(Instruction):
         super().__init__(block, ast_node)
         self.expr = None
 
+    def calc_types(self):
+        if self.expr:
+            self.expr.calc_types()
+
 
 class Return(Instruction):
     def __init__(self, block, ast_node, expr=None):
         super().__init__(block, ast_node)
         self.expr = None
+
+    def calc_types(self):
+        if self.expr:
+            self.expr.calc_types()
 
 
 class Raise(Instruction):
@@ -447,8 +471,13 @@ class Raise(Instruction):
         self.expr = None
         self.from_expr = from_expr
 
+    def calc_types(self):
+        super().calc_types()
+
+
 class Break(Instruction):
     pass
+
 
 class Continue(Instruction):
     pass

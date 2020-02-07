@@ -79,12 +79,14 @@ def compiler_test(test_name="factorial"):
 
     program = Program()
     program.search_paths = search_paths
+    program.build_dir = os.path.join(source_dir, "build")
+    os.makedirs(program.build_dir, exist_ok=True)
     program.modules["__main__"] = cur_module
     program.modules[cur_module.abs_name] = cur_module
 
     cur_module.program = program
 
-    build_code_graph(cur_module)
+    graph = build_code_graph(cur_module)
     return
 
     cpp_code = ast_to_cpp(ast, cur_module_name_list, source_path)
