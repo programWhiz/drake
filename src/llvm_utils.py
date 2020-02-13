@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+import sys
 from subprocess import PIPE
 from typing import List
 
@@ -50,13 +51,20 @@ def compile_module_llvm(module_path:str, module:ll.Module) -> str:
 
     logging.debug(f"Compiling object code from module '%s' to '%s'", module_path, obj_file_path)
     llc_cmd = [llc_exe_path, '-filetype=obj', '-o', obj_file_path, ll_file_path]
-
-    ret = subprocess.call(llc_cmd, stdout=PIPE, stderr=PIPE)
+    ret = run_cli_cmd(llc_cmd)
     assert ret == 0, f"Failed to build object code from '{module_path}'!"
 
     return obj_file_path
 
 
+def run_cli_cmd(cmd):
+    # cmd = ' '.join(shlex.quote(arg) for arg in cmd)
+    proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE)
+    print(proc.stdout.decode('utf-8'), file=sys.stdout)
+    print(proc.stderr.decode('utf-8'), file=sys.stderr)
+    return proc.returncode
+
+
 def create_binary_executable(outpath:str, module_list:List[str]):
-    ret = subprocess.call([ 'g++', *module_list, '-o', outpath ], stdout=PIPE, stderr=PIPE)
+    ret = run_cli_cmd([ 'g++', *module_list, '-o', outpath ])
     assert ret == 0, "Failed to compile modules with g++."

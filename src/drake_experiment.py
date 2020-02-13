@@ -118,11 +118,11 @@ class TypeSpec():
     def equivalent(self, other_type):
         return self.dtype == other_type.dtype
 
-    def get_ir_type(self):
+    def get_llvm_type(self):
         ir_type = dtype_to_ir_type.get(self.dtype)
         if ir_type:
             return ir_type
-        raise f"Could not compile type '{self.dtype}' to native."
+        raise TypeError(f"Could not compile type '{self.dtype}' to native.")
 
 
 class AnyType(TypeSpec):
@@ -209,7 +209,7 @@ class Literal(Node):
         return f"{self.type_spec}({self.value})"
 
     def build_llvm_ir(self, bb):
-        ir_type = self.type_spec.get_ir_type()
+        ir_type = self.type_spec.get_llvm_type()
         return ll.Constant(ir_type, self.value)
 
 
@@ -377,16 +377,22 @@ class Symbol(Node):
         return self.name
 
     def build_llvm_ir(self, bb):
-        ir_type = self.type_spec.get_ir_type()
+        ir_type = self.type_spec.get_llvm_type()
         stack_var = bb.alloca(ir_type)
         return stack_var
 
 
 class Block(Instruction):
-    def __init__(self, instrs=[], parent=None, scope_vars={}):
+    def __init__(self, instrs=None, parent=None, funcs=None, classes=None):
         self.parent = parent
-        self.instrs = instrs
-        self.scope_vars = {}
+        self.instrs = instrs or []
+        self.classes = classes or []
+        self.funcs = funcs or []
+
+        for func in self.funcs:
+            func.block = self
+        for cls in self.classes:
+            cls.block = self
 
     def build_type_spec(self):
         for instr in self.instrs:
@@ -401,11 +407,19 @@ class Module(Block):
 
     def build_llvm_ir(self):
         module = ll.Module()
+        self.build_funcs_llvm_ir(module)
+        self.build_init_func_llvm_ir(module)
+        return module
 
+    def build_funcs_llvm_ir(self, module):
+        for func in self.funcs:
+            func.build_llvm_ir(module)
+
+    def build_init_func_llvm_ir(self, module):
+        """Constructs the module init function"""
         fntype = ll.FunctionType(ll.VoidType(), [])
 
-        module_code_name = self.abs_name.replace('.', '_')
-        init_func = ll.Function(module, fntype, name=f'init_module_{module_code_name}')
+        init_func = ll.Function(module, fntype, name=f'$init_module_{self.abs_name}')
         init_func_build = ll.IRBuilder()
         init_func_build.position_at_end(init_func.append_basic_block())
 
@@ -430,6 +444,10 @@ class FuncParam(Node):
         self.type_spec = self.binding
         return self.type_spec
 
+    def build_llvm_ir(self, bb):
+        func = getattr(bb, 'func')
+        return func.args[self.index]
+
 
 class ReturnStmt(Instruction):
     def __init__(self, ret_value=None, **kwargs):
@@ -440,15 +458,27 @@ class ReturnStmt(Instruction):
         self.type_spec = self.ret_value.build_type_spec()
         return self.type_spec
 
+    def build_llvm_ir(self, bb):
+        if self.type_spec is None:
+            bb.ret_void()
+
+        ret_val = self.ret_value.build_llvm_ir(bb)
+
+        if ret_val.type.is_pointer:
+            ret_val = bb.load(ret_val)
+
+        bb.ret(ret_val)
+
 
 class FuncDef(Block):
-    def __init__(self, name=None, params=None, return_stmts=None, **kwargs):
+    def __init__(self, name=None, params=None, return_stmts=None, block=None, **kwargs):
         super().__init__(**kwargs)
         self.name = name
         self.params = params or []
         self.return_stmts = return_stmts or []
         self.template_instances = []
         self.bindings:List["FuncBindSpec"] = []
+        self.block = block
 
     def bind_type_spec(self, args, kwargs):
         binding = self.bind_param_args(args, kwargs)
@@ -489,7 +519,7 @@ class FuncDef(Block):
 
         bind_params = OrderedDict()
         used_keys = set()
-        for name, param in self.params.items():
+        for arg_idx, (name, param) in enumerate(self.params.items()):
             param_type, value_type = None, None
             dtype, is_const = None, None
 
@@ -507,12 +537,18 @@ class FuncDef(Block):
 
             bind_params[name] = FuncBindParam(func_param=param, value=value, dtype=dtype)
 
-        def bind_arg(arg, param):
+        def bind_arg(arg, param, arg_idx, kwarg_key):
             nonlocal self, bind_params, used_keys
             arg_type = arg.build_type_spec()
 
             binding = bind_params[param.name]
             binding.value = arg
+
+            if kwarg_key is not None:
+                binding.set_kwarg_key(kwarg_key)
+            else:
+                binding.set_arg_index(arg_idx)
+
             used_keys.add(param.name)
 
             # If param has an explicit type spec, use it
@@ -524,8 +560,8 @@ class FuncDef(Block):
             else:  # use arg param type
                 binding.dtype = arg_type.dtype
 
-        for arg, param in zip(args, self.params.values()):
-            bind_arg(arg, param)
+        for arg_idx, (arg, param) in enumerate(zip(args, self.params.values())):
+            bind_arg(arg, param, arg_idx, None)
 
         # Iterate through keyword args
         for key, arg in kwargs.items():
@@ -533,7 +569,7 @@ class FuncDef(Block):
                 raise Exception(f"Invoking function `{self.name}`: No parameter named `{key}`.")
             if key in used_keys:
                 raise Exception(f"Invoking function `{self.name}`: Duplicate value for parameter `{key}`.")
-            bind_arg(arg, self.params[key])
+            bind_arg(arg, self.params[key], None, key)
 
         unbound = [ key for key, bind in bind_params.items() if bind.value is None ]
         if unbound:
@@ -543,23 +579,67 @@ class FuncDef(Block):
         # Bind params, don't solve return type yet
         return FuncBindSpec(func=self, bind_params=bind_params, ret_type=None)
 
+    def get_llvm_name(self, fntype:ll.FunctionType) -> str:
+        name = ""
+        if self.parent:
+            name = self.parent.get_llvm_name()
+            name += '.'
+        name += self.name
+
+        name += '_' + str(fntype.return_type)
+        if len(fntype.args) > 0:
+            name += '_'
+            name += '_'.join(str(arg) for arg in fntype.args)
+
+        return name
 
     def build_llvm_ir(self, module):
         for binding in self.bindings:
-            func = ll.Function(module, fntype, name='foo')
+            fntype = binding.get_llvm_func_type()
+            name = self.get_llvm_name(fntype)
+            binding.llvm_name = name
+
+            func = ll.Function(module, fntype, name=name)
             block = func.append_basic_block()
             bb = ll.IRBuilder()
             bb.position_at_end(block)
 
+            binding.llvm_func = func
+            setattr(bb, 'func', func)
+
             for instr in self.instrs:
                 instr.build_llvm_ir(bb)
 
+            if isinstance(fntype.return_type, ll.VoidType):
+                bb.ret_void()
+
 
 class FuncBindParam(TypeSpec):
-    def __init__(self, func_param, value, **kwargs):
+    def __init__(self, func_param, value, is_kwarg = False,
+                 kwarg_key: str = None, arg_idx : int = None, **kwargs):
         super().__init__(**kwargs)
         self.func_param = func_param
         self.value = value
+        self.is_kwarg = is_kwarg
+        self.is_idx_arg = not is_kwarg
+        self.kwarg_key = kwarg_key
+        self.arg_idx = arg_idx
+
+    def set_kwarg_key(self, key:str):
+        self.is_kwarg = True
+        self.kwarg_key = key
+        self.is_arg_idx = False
+        self.arg_idx = None
+
+    def set_arg_index(self, idx:int):
+        self.is_kwarg = False
+        self.kwarg_key = None
+        self.is_arg_idx = True
+        self.arg_idx = idx
+
+    def build_llvm_ir(self, bb):
+        value = self.value.build_llvm_ir(bb)
+        return bb.load(value) if value.type.is_pointer else value
 
 
 class FuncBindSpec(TypeSpec):
@@ -568,10 +648,12 @@ class FuncBindSpec(TypeSpec):
     """
     def __init__(self, func, bind_params, ret_type, **kwargs):
         super().__init__(**kwargs)
-        self.func = func
+        self.func:FuncDef = func
         self.ret_type = ret_type
         self.bind_params = bind_params
         self.invocations:set["InvokeFunc"] = set()
+        self.llvm_func = None
+        self.llvm_name = None
 
     def __str__(self):
         params = ', '.join(f"{k}:{v}" for k, v in self.bind_params.items())
@@ -605,15 +687,32 @@ class FuncBindSpec(TypeSpec):
         for key, bind in self.bind_params.items():
             bind.func_param.binding = bind
 
-    def get_llvm_func_spec(self):
-        ret_type = self.ret_type.get_llvm_ir() if self.ret_type else ll.VoidType()
-        return ll.FunctionType(ret_type, [ p.get_llvm_ir() for p in self.bind_params ])
+    def get_llvm_func_type(self):
+        ret_type = self.ret_type.get_llvm_type() if self.ret_type else ll.VoidType()
+        return ll.FunctionType(ret_type, [ p.get_llvm_type() for p in self.bind_params.values() ])
+
+    def get_llvm_name(self):
+        if self.llvm_name is None:
+            self.llvm_name = self.func.get_llvm_name(self.get_llvm_func_type())
+        return self.llvm_name
+
+    def get_llvm_func(self):
+        return self.llvm_func
+
+    def build_llvm_call(self, bb):
+        func_args = [ None ] * len(self.bind_params)
+        for param in self.bind_params.values():
+            func_args[param.func_param.index] = param.build_llvm_ir(bb)
+
+        ret = bb.call(self.llvm_func, func_args)
+        return ret
 
 
 class InvokeFunc(Instruction):
-    def __init__(self, func=None, args=None, kwargs=None, **super_kwargs):
+    def __init__(self, func=None, args=None, kwargs=None, binding=None, **super_kwargs):
         super().__init__(**super_kwargs)
         self.func:FuncDef = func
+        self.binding = binding
         self.args = args or []
         self.kwargs = kwargs or {}
         self.type_spec = None
@@ -623,9 +722,9 @@ class InvokeFunc(Instruction):
         self.binding.invocations.add(self)
         return self.binding.ret_type
 
-    def get_llvm_ir(self):
-        pass
-
+    def build_llvm_ir(self, bb):
+        val = self.binding.build_llvm_call(bb)
+        return val
 
 x = Symbol(name='x')
 ass_x = AssignAtom(left=x, right=BoolLiteral(True))
@@ -638,32 +737,31 @@ z = Symbol(name='z')
 ass_z = AssignAtom(left=z, right=add_xy)
 
 # fn subtract(a, b): return a - b;
-# param_a = FuncParam(name='a', default_value=Int32Literal(1))
-# param_b = FuncParam(name='b')
-# a_minus_b = BinarySub(left=param_a, right=param_b)
-# c = Symbol(name='c')
-# ass_c = AssignAtom(left=c, right=a_minus_b)
-# return_c = ReturnStmt(c)
+param_a = FuncParam(name='a', default_value=Int32Literal(1), index=0)
+param_b = FuncParam(name='b', index=1)
+a_minus_b = BinarySub(left=param_a, right=param_b)
+c = Symbol(name='c')
+ass_c = AssignAtom(left=c, right=a_minus_b)
+return_c = ReturnStmt(c)
 
-# subtract = FuncDef(
-#     name='subtract',
-#     params=OrderedDict(a=param_a, b=param_b),
-#     instrs=[ ass_c, return_c ],
-#     return_stmts=[ return_c ])
-#
+subtract = FuncDef(
+    name='subtract',
+    params=OrderedDict(a=param_a, b=param_b),
+    instrs=[ ass_c, return_c ],
+    return_stmts=[ return_c ])
+
 # w = subtract(z, y)
-# w = Symbol(name='w')
-# invoke_subtract = InvokeFunc(
-#     func=subtract,
-#     args=[z],
-#     kwargs={'b': y},
-# )
-# ass_w = AssignAtom(left=w, right=invoke_subtract)
+w = Symbol(name='w')
+ass_w = AssignAtom(left=w, right=InvokeFunc(
+    func=subtract,
+    args=[z, y],
+))
+
 # ass_w2 = AssignAtom(left=w, right=InvokeFunc(func=subtract, args=[ Int32Literal(3), FloatLiteral(4) ]))
 
 module = Module(abs_name='__main__', abs_path=__file__,
-                # funcs=[ subtract ],
-                instrs=[ ass_x, ass_y, ass_z ])
+                funcs=[ subtract ],
+                instrs=[ ass_x, ass_y, ass_z, ass_w ])
 module.build_type_spec()
 
 print("=== IR Code ===\n\n")
