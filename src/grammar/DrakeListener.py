@@ -224,21 +224,30 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
-    # Enter a parse tree produced by DrakeParser#anassign_stmt.
-    def enterAnassign_stmt(self, ctx:DrakeParser.Anassign_stmtContext):
+    # Enter a parse tree produced by DrakeParser#assign_atoms.
+    def enterAssign_atoms(self, ctx:DrakeParser.Assign_atomsContext):
         pass
 
-    # Exit a parse tree produced by DrakeParser#anassign_stmt.
-    def exitAnassign_stmt(self, ctx:DrakeParser.Anassign_stmtContext):
+    # Exit a parse tree produced by DrakeParser#assign_atoms.
+    def exitAssign_atoms(self, ctx:DrakeParser.Assign_atomsContext):
         pass
 
 
-    # Enter a parse tree produced by DrakeParser#annassign.
-    def enterAnnassign(self, ctx:DrakeParser.AnnassignContext):
+    # Enter a parse tree produced by DrakeParser#assign_star.
+    def enterAssign_star(self, ctx:DrakeParser.Assign_starContext):
         pass
 
-    # Exit a parse tree produced by DrakeParser#annassign.
-    def exitAnnassign(self, ctx:DrakeParser.AnnassignContext):
+    # Exit a parse tree produced by DrakeParser#assign_star.
+    def exitAssign_star(self, ctx:DrakeParser.Assign_starContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#assign_atom_list.
+    def enterAssign_atom_list(self, ctx:DrakeParser.Assign_atom_listContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#assign_atom_list.
+    def exitAssign_atom_list(self, ctx:DrakeParser.Assign_atom_listContext):
         pass
 
 
@@ -752,6 +761,24 @@ class DrakeListener(ParseTreeListener):
 
     # Exit a parse tree produced by DrakeParser#power.
     def exitPower(self, ctx:DrakeParser.PowerContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#bare_atom_expr.
+    def enterBare_atom_expr(self, ctx:DrakeParser.Bare_atom_exprContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#bare_atom_expr.
+    def exitBare_atom_expr(self, ctx:DrakeParser.Bare_atom_exprContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#bare_atom_star_expr.
+    def enterBare_atom_star_expr(self, ctx:DrakeParser.Bare_atom_star_exprContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#bare_atom_star_expr.
+    def exitBare_atom_star_expr(self, ctx:DrakeParser.Bare_atom_star_exprContext):
         pass
 
 

@@ -165,7 +165,7 @@ typedarg_item: namedarg | star_args | named_kw_args ;
 star_args: type_qual? '*' NAME ;
 named_kw_args: type_qual? '**' NAME ;
 namedarg: type_qual? NAME ('=' test) ? ;
-type_qual: dotted_name (template_def)? ;
+type_qual: (CONST)? dotted_name (template_def)? ;
 template_def: '<' (template_args)? '>' ;
 template_args: NAME (',' NAME)* ','?;
 
@@ -181,12 +181,13 @@ stmt: simple_stmt | compound_stmt;
 simple_stmt: small_stmt (';' small_stmt)* (';')? NEWLINE;
 small_stmt: (expr_stmt | del_stmt | pass_stmt | flow_stmt |
              import_stmt | global_stmt | nonlocal_stmt | assert_stmt);
-expr_stmt: anassign_stmt | augassign_stmt | assign_stmt;
-assign_stmt : testlist_star_expr '=' (yield_expr|testlist_star_expr);
-anassign_stmt : testlist_star_expr annassign;
-annassign : ':' test ('=' test)?;
+expr_stmt: augassign_stmt | assign_stmt;
+assign_stmt: assign_atoms '=' (yield_expr|testlist_star_expr) ;
+assign_atoms: bare_atom_expr | bare_atom_star_expr | assign_star | '(' assign_atom_list ')' ;
+assign_star: '*' ;
+assign_atom_list: assign_atoms (',' assign_atoms)* ','? ;
 testlist_star_expr: (test|star_expr) (',' (test|star_expr))* (',')?;
-augassign_stmt : testlist_star_expr augassign (yield_expr|testlist);
+augassign_stmt : bare_atom_expr augassign testlist;
 augassign: ('+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>=' | '**=' | '//=');
 // For normal and annotated assignments, additional restrictions enforced by the interpreter
 del_stmt: 'del' exprlist;
@@ -252,7 +253,9 @@ arith_expr: term (('+'|'-') term)*;
 term: factor (('*'|'/'|'%'|'//') factor)*;
 factor: ('+'|'-'|'~') factor | power;
 power: atom_expr ('**' factor)?;
-atom_expr: (AWAIT)? atom trailer*;
+bare_atom_expr: type_qual? bare_name trailer*;
+bare_atom_star_expr: type_qual? '*' bare_name trailer*;
+atom_expr: (AWAIT)? type_qual? atom trailer*;
 atom: atom_gen_expr | atom_list_expr | atom_dict_expr | bare_name | literal | ellipsis;
 atom_gen_expr: '(' (yield_expr|testlist_comp)? ')' ;
 atom_dict_expr: '{' (dict_maker | set_maker)? '}' ;
