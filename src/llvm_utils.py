@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 import os
 import subprocess
@@ -80,6 +81,16 @@ def run_cli_cmd(cmd):
     return proc.returncode
 
 
-def create_binary_executable(outpath:str, module_list:List[str]):
+def create_binary_executable(outpath:str, module_list:List[str], run_exe=False):
     ret = run_cli_cmd([ 'g++', *module_list, '-o', outpath ])
     assert ret == 0, "Failed to compile modules with g++."
+
+    if run_exe:
+        logging.info("Running executable: %s", outpath)
+        start_time = datetime.utcnow()
+
+        return_code = run_cli_cmd(outpath)
+
+        end_time = datetime.utcnow()
+        logging.info("Executable %s exited with code: %d", outpath, return_code)
+        logging.info("Executable %s duration: %s", outpath, end_time - start_time)

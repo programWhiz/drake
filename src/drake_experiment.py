@@ -774,4 +774,4 @@ print(str(llvm_module))
 # We need a main method as entry point
 build_main_method(llvm_module, module.llvm_init_func)
 obj_file = compile_module_llvm("/tmp/tmp.dk", llvm_module)
-create_binary_executable("/tmp/tmp.exe", [ obj_file ])
+create_binary_executable("/tmp/tmp.exe", [ obj_file ], run_exe=True)
