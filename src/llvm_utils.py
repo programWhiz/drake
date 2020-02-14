@@ -34,6 +34,21 @@ def init_llvm_compiler():
     llvm_target_machine = llvm_target.create_target_machine()
 
 
+def build_main_method(module, module_init_func:List[ll.Function]) -> ll.Function:
+    argc = ll.IntType(32) # int argc
+    argv = ll.PointerType(ll.PointerType(ll.IntType(8)))  # char** argv
+    # int main( int argc, char** argv )
+    ftype = ll.FunctionType(ll.IntType(32), [ argc, argv ])
+    main_func = ll.Function(module, ftype, 'main')
+
+    bb = ll.IRBuilder()
+    bb.position_at_end(main_func.append_basic_block())
+    bb.call(module_init_func, [])
+    bb.ret(ll.Constant(ll.IntType(32), 0))
+
+    return main_func
+
+
 def compile_module_llvm(module_path:str, module:ll.Module) -> str:
     if llvm_target is None:
         init_llvm_compiler()

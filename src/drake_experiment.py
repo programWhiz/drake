@@ -3,7 +3,7 @@ import subprocess
 from typing import List
 from collections import OrderedDict
 import llvmlite.ir as ll
-from src.llvm_utils import compile_module_llvm, create_binary_executable
+from src.llvm_utils import compile_module_llvm, create_binary_executable, build_main_method
 
 int_precisions = {
     'int8': 8,
@@ -404,6 +404,7 @@ class Module(Block):
         self.abs_name = abs_name
         self.abs_path = abs_path
         super().__init__(**kwargs)
+        self.llvm_init_func = None
 
     def build_llvm_ir(self):
         module = ll.Module()
@@ -420,6 +421,7 @@ class Module(Block):
         fntype = ll.FunctionType(ll.VoidType(), [])
 
         init_func = ll.Function(module, fntype, name=f'$init_module_{self.abs_name}')
+        self.llvm_init_func = init_func
         init_func_build = ll.IRBuilder()
         init_func_build.position_at_end(init_func.append_basic_block())
 
@@ -769,5 +771,7 @@ llvm_module = module.build_llvm_ir()
 
 print(str(llvm_module))
 
+# We need a main method as entry point
+build_main_method(llvm_module, module.llvm_init_func)
 obj_file = compile_module_llvm("/tmp/tmp.dk", llvm_module)
 create_binary_executable("/tmp/tmp.exe", [ obj_file ])
