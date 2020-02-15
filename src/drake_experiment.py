@@ -3,6 +3,8 @@ import subprocess
 from typing import List
 from collections import OrderedDict
 import llvmlite.ir as ll
+from src import llvm_cast
+from src.llvm_cast import llvm_type_shortname
 from src.llvm_utils import compile_module_llvm, create_binary_executable, build_main_method
 
 int_precisions = {
@@ -13,6 +15,7 @@ int_precisions = {
 }
 
 float_precisions = {
+    'float16': 16,
     'float32': 32,
     'float64': 64,
 }
@@ -56,7 +59,6 @@ arith_ops_matrix = [
     [-1,  6,   6,  6,   6,   7,    6,  7],  # f32
     [-1,  7,   7,  7,   7,   7,    7,  7],  # f64
 ]
-
 
 def float_for_precision(bits):
     if bits >= 64:
@@ -116,7 +118,7 @@ class TypeSpec():
         return self.dtype == other_type.dtype
 
     def equivalent(self, other_type):
-        return self.dtype == other_type.dtype
+        return other_type and self.dtype == other_type.dtype
 
     def get_llvm_type(self):
         ir_type = dtype_to_ir_type.get(self.dtype)
@@ -277,6 +279,8 @@ class BinaryOp(Instruction):
         self.left_op_type_spec = None
         self.right_op_type_spec = None
         self.left_assoc = left_assoc
+        self.cast_left = None
+        self.cast_right = None
 
     def build_type_spec(self):
         rtypes = self.right.build_type_spec()
@@ -311,7 +315,14 @@ class BinaryOp(Instruction):
         right = self.right.build_llvm_ir(bb)
         right_val = bb.load(right) if right.type.is_pointer else right
 
-        return self.build_llvm_ir_op(bb, left_val, right_val)
+        op = self.build_llvm_ir_op(bb, left_val, right_val)
+
+        if self.cast_left:
+            left_val = self.cast_left(bb, left_val)
+        elif self.cast_right:
+            right_val = self.cast_right(bb, right_val)
+
+        return op(left_val, right_val)
 
     def build_llvm_ir_op(self, bb, left, right):
         raise NotImplementedError()
@@ -319,23 +330,39 @@ class BinaryOp(Instruction):
 
 class ArithOp(BinaryOp):
     def get_result_type(self, ltype, rtype) -> TypeSpec:
-        if ltype.is_builtin() and rtype.is_builtin():
-            out_id = arith_ops_matrix[ ltype.builtin_id() ][ rtype.builtin_id() ]
-            return TypeSpec.from_builtin_id(out_id)
-        else:
+        if not ltype.is_builtin() or not rtype.is_builtin():
             raise NotImplemented("No operator for non-built-in types.")
+
+        out_type_id = arith_ops_matrix[ ltype.builtin_id() ][ rtype.builtin_id() ]
+        out_type = TypeSpec.from_builtin_id(out_type_id)
+        self.type_spec = out_type
+
+        # Should we cast between parts?
+        self.cast_left = None
+        if not out_type.equivalent(ltype):
+            self.cast_left = llvm_cast.cast_types[ltype.dtype][out_type.dtype]
+
+        self.cast_right = None
+        if not out_type.equivalent(rtype):
+            self.cast_right = llvm_cast.cast_types[rtype.dtype][out_type.dtype]
+
+        return out_type
 
 
 class BinaryAdd(ArithOp):
     """Binary addition"""
     def build_llvm_ir_op(self, bb, left, right):
-        return bb.add(left, right)
+        if self.type_spec.is_float():
+            return bb.fadd
+        return bb.add
 
 
 class BinarySub(ArithOp):
     """Binary subtraction"""
     def build_llvm_ir_op(self, bb, left, right):
-        return bb.sub(left, right)
+        if self.type_spec.is_float():
+            return bb.fsub
+        return bb.sub
 
 
 class AssignAtom(BinaryOp):
@@ -354,16 +381,27 @@ class AssignAtom(BinaryOp):
             type_spec = left_type
         else:
             type_spec = right_type
-            self.left.type_spec = type_spec
+            self.left.set_type_spec(type_spec)
 
         print(f"{self.left} <= {right_type}")
         self.type_spec = type_spec
 
+        self.cast_right = None
+        if not self.type_spec.equivalent(right_type):
+            self.cast_right = llvm_cast.cast_types[right_type.dtype][left_type.dtype]
+
     def build_llvm_ir(self, bb):
+        self.build_type_spec()
+
         right = self.right.build_llvm_ir(bb)
         right_val = bb.load(right) if right.type.is_pointer else right
+
         left = self.left.build_llvm_ir(bb)
+        if self.cast_right:
+            right_val = self.cast_right(bb, right_val)
+
         bb.store(right_val, left)
+
         return left
 
 
@@ -372,14 +410,21 @@ class Symbol(Node):
         super().__init__(**kwargs)
         self.name = name
         self.required_type = required_type
+        self.llvm_var = None
 
     def __str__(self):
         return self.name
 
+    def set_type_spec(self, type_spec):
+        if not (self.type_spec and type_spec.equivalent(self.type_spec)):
+            self.type_spec = type_spec
+            self.llvm_var = None
+
     def build_llvm_ir(self, bb):
         ir_type = self.type_spec.get_llvm_type()
-        stack_var = bb.alloca(ir_type)
-        return stack_var
+        if self.llvm_var is None:
+            self.llvm_var = bb.alloca(ir_type)
+        return self.llvm_var
 
 
 class Block(Instruction):
@@ -488,12 +533,12 @@ class FuncDef(Block):
         # Do we already know what type of value would be returned?
         for existing_binding in self.bindings:
             if existing_binding.equivalent(binding):
+                self.bindings.append(binding)
                 binding.ret_type = existing_binding.ret_type
                 return binding
 
-        binding.apply_bindings()
-
         # We didn't find a binding, solve return type
+        binding.apply_bindings()
         self.bind_return_type(binding)
         self.bindings.append(binding)
 
@@ -588,26 +633,40 @@ class FuncDef(Block):
             name += '.'
         name += self.name
 
-        name += '_' + str(fntype.return_type)
+        typename = str(fntype.return_type)
+        name += '_' + llvm_type_shortname.get(typename, typename)
+
         if len(fntype.args) > 0:
-            name += '_'
-            name += '_'.join(str(arg) for arg in fntype.args)
+            for arg in fntype.args:
+                typename = str(arg)
+                typename = llvm_type_shortname.get(typename, typename)
+                name += '_' + typename
 
         return name
 
     def build_llvm_ir(self, module):
+        existing_funcs = dict()
+
         for binding in self.bindings:
             fntype = binding.get_llvm_func_type()
-            name = self.get_llvm_name(fntype)
-            binding.llvm_name = name
+            func_name = self.get_llvm_name(fntype)
+            binding.llvm_name = func_name
 
-            func = ll.Function(module, fntype, name=name)
+            if func_name in existing_funcs:
+                binding.llvm_func = existing_funcs[func_name]
+
+            # Update the graph nodes to correct type
+            binding.apply_bindings()
+            self.bind_return_type(binding)
+
+            func = ll.Function(module, fntype, name=func_name)
             block = func.append_basic_block()
             bb = ll.IRBuilder()
             bb.position_at_end(block)
 
             binding.llvm_func = func
             setattr(bb, 'func', func)
+            existing_funcs[func_name] = func
 
             for instr in self.instrs:
                 instr.build_llvm_ir(bb)
@@ -720,58 +779,65 @@ class InvokeFunc(Instruction):
         self.type_spec = None
 
     def build_type_spec(self):
-        self.binding = self.func.bind_type_spec(self.args, self.kwargs)
-        self.binding.invocations.add(self)
+        if self.binding is None:
+            self.binding = self.func.bind_type_spec(self.args, self.kwargs)
+            self.binding.invocations.add(self)
+        print(self.func.name, "<=", self.binding)
         return self.binding.ret_type
 
     def build_llvm_ir(self, bb):
         val = self.binding.build_llvm_call(bb)
         return val
 
-x = Symbol(name='x')
-ass_x = AssignAtom(left=x, right=BoolLiteral(True))
 
-y = Symbol(name='y')
-ass_y = AssignAtom(left=y, right=BoolLiteral(True))
+def test():
+    x = Symbol(name='x')
+    ass_x = AssignAtom(left=x, right=BoolLiteral(True))
 
-add_xy = BinaryAdd(left=x, right=y)
-z = Symbol(name='z')
-ass_z = AssignAtom(left=z, right=add_xy)
+    y = Symbol(name='y')
+    ass_y = AssignAtom(left=y, right=BoolLiteral(True))
 
-# fn subtract(a, b): return a - b;
-param_a = FuncParam(name='a', default_value=Int32Literal(1), index=0)
-param_b = FuncParam(name='b', index=1)
-a_minus_b = BinarySub(left=param_a, right=param_b)
-c = Symbol(name='c')
-ass_c = AssignAtom(left=c, right=a_minus_b)
-return_c = ReturnStmt(c)
+    add_xy = BinaryAdd(left=x, right=y)
+    z = Symbol(name='z')
+    ass_z = AssignAtom(left=z, right=add_xy)
 
-subtract = FuncDef(
-    name='subtract',
-    params=OrderedDict(a=param_a, b=param_b),
-    instrs=[ ass_c, return_c ],
-    return_stmts=[ return_c ])
+    # fn subtract(a, b): return a - b;
+    param_a = FuncParam(name='a', default_value=Int32Literal(1), index=0)
+    param_b = FuncParam(name='b', index=1)
+    a_minus_b = BinarySub(left=param_a, right=param_b)
+    c = Symbol(name='c')
+    ass_c = AssignAtom(left=c, right=a_minus_b)
+    return_c = ReturnStmt(c)
 
-# w = subtract(z, y)
-w = Symbol(name='w')
-ass_w = AssignAtom(left=w, right=InvokeFunc(
-    func=subtract,
-    args=[z, y],
-))
+    subtract = FuncDef(
+        name='subtract',
+        params=OrderedDict(a=param_a, b=param_b),
+        instrs=[ ass_c, return_c ],
+        return_stmts=[ return_c ])
 
-# ass_w2 = AssignAtom(left=w, right=InvokeFunc(func=subtract, args=[ Int32Literal(3), FloatLiteral(4) ]))
+    w = Symbol(name='w')
 
-module = Module(abs_name='__main__', abs_path=__file__,
-                funcs=[ subtract ],
-                instrs=[ ass_x, ass_y, ass_z, ass_w ])
-module.build_type_spec()
+    ass_w = AssignAtom(left=w, right=InvokeFunc(
+        func=subtract,
+        args=[z, y],
+    ))
 
-print("=== IR Code ===\n\n")
-llvm_module = module.build_llvm_ir()
+    ass_w2 = AssignAtom(left=w, right=InvokeFunc(func=subtract, args=[ Int32Literal(3), FloatLiteral(4) ]))
 
-print(str(llvm_module))
+    module = Module(abs_name='__main__', abs_path=__file__,
+                    funcs=[ subtract ],
+                    instrs=[ ass_x, ass_y, ass_z, ass_w, ass_w2 ])
+    module.build_type_spec()
 
-# We need a main method as entry point
-build_main_method(llvm_module, module.llvm_init_func)
-obj_file = compile_module_llvm("/tmp/tmp.dk", llvm_module)
-create_binary_executable("/tmp/tmp.exe", [ obj_file ], run_exe=True)
+    print("=== IR Code ===\n\n")
+    llvm_module = module.build_llvm_ir()
+
+    print(str(llvm_module))
+
+    # We need a main method as entry point
+    build_main_method(llvm_module, module.llvm_init_func)
+    obj_file = compile_module_llvm("/tmp/tmp.dk", llvm_module)
+    create_binary_executable("/tmp/tmp.exe", [ obj_file ], run_exe=True)
+
+if __name__ == '__main__':
+    test()
