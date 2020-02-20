@@ -185,3 +185,46 @@ def test_constants():
     cfunc_type = CFUNCTYPE(c_float)
     result = run_ir_code(module, "test_func", cfunc_type, [])
     assert math.isclose(expect, result, abs_tol=0.001)
+
+
+def test_bool_ops():
+    import operator
+
+    for opname in ('and_', 'or_', 'xor'):
+        for a in (True, False):
+            for b in (True, False):
+                op_func = getattr(operator, opname)
+                _test_bool_op(a, b, opname, expect=op_func(a, b))
+
+
+def _test_bool_op(A, B, opname, expect):
+    bool_type = ll.IntType(8)
+    a = { "name": "a", "id": next_id(), "type": bool_type }
+    b = { "name": "b", "id": next_id(), "type": bool_type }
+    ret = { "name": "ret", "id": next_id(), "type": bool_type }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [a, b],
+        "instrs": [
+            {
+                "op": "ret",
+                "value": {
+                    "op": opname,
+                    "left": { "op": "func_arg", "value": 0 },
+                    "right": { "op": "func_arg", "value": 1 },
+                }
+            }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test",
+        "funcs": { func_def['id']: func_def }
+    })
+
+    cfunc_type = CFUNCTYPE(c_int8, c_int8, c_int8)
+    result = run_ir_code(module, "test_func", cfunc_type, [A, B])
+    assert expect == result
