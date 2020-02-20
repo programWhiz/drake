@@ -1,7 +1,7 @@
 import math
 import pytest
 import llvmlite.ir as ll
-from ctypes import CFUNCTYPE, c_double, c_int32, c_int8, c_int16, c_int64, c_float, c_longdouble
+from ctypes import CFUNCTYPE, c_int32, c_int8, c_float, c_uint32
 from src.llvm_utils import run_ir_code
 from src.llvm_ast import compile_module_ir, next_id
 
@@ -227,4 +227,121 @@ def _test_bool_op(A, B, opname, expect):
 
     cfunc_type = CFUNCTYPE(c_int8, c_int8, c_int8)
     result = run_ir_code(module, "test_func", cfunc_type, [A, B])
-    assert expect == result
+    result = (result == 1)  # cast from int to bool
+    assert result == expect
+
+
+def test_boolean_not():
+    bool_type = ll.IntType(1)
+    a = { "name": "a", "id": next_id(), "type": bool_type }
+    ret = { "name": "ret", "id": next_id(), "type": bool_type }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [a],
+        "instrs": [
+            {
+                "op": "ret",
+                "value": {
+                    "op": "s!=",
+                    "left": { "op": "func_arg", "value": 0 },
+                    "right": { "op": "const_val", "value": ll.Constant(bool_type, 1) },
+                }
+            }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test", "funcs": { func_def['id']: func_def }
+    })
+
+    cfunc_type = CFUNCTYPE(c_int8, c_int8)
+
+    for func_arg in (True, False):
+        result = run_ir_code(module, "test_func", cfunc_type, [func_arg])
+        result = (result != 0)  # cast from int to bool
+        assert result == (not func_arg)
+
+
+def test_comparisons():
+    a, b = 3.5, 4.6
+    args = ll.FloatType(), c_float
+    _test_comparisons(a, b, a != b, "f!=", *args)
+    _test_comparisons(a, a, a != a, "f!=", *args)
+    _test_comparisons(a, b, a == b, "f==", *args)
+    _test_comparisons(a, a, a == a, "f==", *args)
+    _test_comparisons(a, b, a > b, "f>", *args)
+    _test_comparisons(a, b, a >= b, "f>=", *args)
+    _test_comparisons(a, b, a < b, "f<", *args)
+    _test_comparisons(a, b, a <= b, "f<=", *args)
+
+    a, b = 7, 6
+    args = ll.IntType(32), c_int32
+    _test_comparisons(a, b, a != b, "s!=", *args)
+    _test_comparisons(a, a, a != a, "s!=", *args)
+    _test_comparisons(a, b, a == b, "s==", *args)
+    _test_comparisons(a, a, a == a, "s==", *args)
+    _test_comparisons(a, b, a > b, "s>", *args)
+    _test_comparisons(a, b, a >= b, "s>=", *args)
+    _test_comparisons(a, b, a < b, "s<", *args)
+    _test_comparisons(a, b, a <= b, "s<=", *args)
+
+    # Test unsigned, should be same as signed in this case
+    args = ll.IntType(32), c_uint32
+    _test_comparisons(a, b, a != b, "u!=", *args)
+    _test_comparisons(a, a, a != a, "u!=", *args)
+    _test_comparisons(a, b, a == b, "u==", *args)
+    _test_comparisons(a, a, a == a, "u==", *args)
+    _test_comparisons(a, b, a > b, "u>", *args)
+    _test_comparisons(a, b, a >= b, "u>=", *args)
+    _test_comparisons(a, b, a < b, "u<", *args)
+    _test_comparisons(a, b, a <= b, "u<=", *args)
+
+    # Test with negs, should reverse equality
+    a, b = 4, -7
+    args = ll.IntType(32), c_uint32
+    _test_comparisons(a, b, a != b, "u!=", *args)
+    _test_comparisons(a, a, a != a, "u!=", *args)
+    _test_comparisons(a, b, a == b, "u==", *args)
+    _test_comparisons(a, a, a == a, "u==", *args)
+    _test_comparisons(a, b, a < b, "u>", *args)
+    _test_comparisons(a, b, a < b, "u>=", *args)
+    _test_comparisons(a, b, a > b, "u<", *args)
+    _test_comparisons(a, b, a > b, "u<=", *args)
+
+
+
+def _test_comparisons(A, B, expect, opname, arg_type, c_arg_type):
+    bool_type = ll.IntType(1)
+    a = { "name": "a", "id": next_id(), "type": arg_type }
+    b = { "name": "b", "id": next_id(), "type": arg_type }
+    ret = { "name": "ret", "id": next_id(), "type": bool_type }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [a, b],
+        "instrs": [
+            {
+                "op": "ret",
+                "value": {
+                    "op": opname,
+                    "left": { "op": "func_arg", "value": 0 },
+                    "right": { "op": "func_arg", "value": 1 },
+                }
+            }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test", "funcs": { func_def['id']: func_def }
+    })
+
+    cfunc_type = CFUNCTYPE(c_int8, c_arg_type, c_arg_type)
+
+    result = run_ir_code(module, "test_func", cfunc_type, [A, B])
+    result = (result != 0)  # cast from int to bool
+    assert result == expect

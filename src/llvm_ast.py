@@ -40,13 +40,20 @@ def compile_func_ir(module, func):
 
 llvm_binary_ops = { 'add', 'fadd', 'sub', 'fsub', 'mul', 'fmul', 'sdiv', 'udiv', 'fdiv', 'and_', 'or_', 'xor' }
 
+llvm_comparison = {
+    'f<', 'f<=', 'f!=', 'f==', 'f>=', 'f>',
+    's<', 's<=', 's!=', 's==', 's>=', 's>',
+    'u<', 'u<=', 'u!=', 'u==', 'u>=', 'u>',
+}
+
 llvm_zero_ops = { 'ret_void' }
 
-llvm_one_ops = { 'ret', }
+llvm_one_ops = { 'ret', 'not_', }
 
 is_binary_op = lambda x: x['op'] in llvm_binary_ops
 is_zero_op = lambda x: x['op'] in llvm_zero_ops
 is_single_op = lambda x: x['op'] in llvm_one_ops
+is_comparison = lambda x: x['op'] in llvm_comparison
 
 
 def is_op(op_name):
@@ -63,6 +70,23 @@ def compile_instruction_ir(bb, instr: is_binary_op, scope: dict):
     left = compile_instruction_ir(bb, instr["left"], scope)
     right = compile_instruction_ir(bb, instr["right"], scope)
     return getattr(bb, instr['op'])(left, right)
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_comparison, scope: dict):
+    left = compile_instruction_ir(bb, instr["left"], scope)
+    right = compile_instruction_ir(bb, instr["right"], scope)
+
+    op = instr['op']
+    data_type, cmp = op[0], op[1:]
+
+    if data_type == 'f':
+        # Using unordered because either op can be NaN
+        return bb.fcmp_unordered(cmp, left, right)
+    elif data_type == 's':
+        return bb.icmp_signed(cmp, left, right)
+    elif data_type == 'u':
+        return bb.icmp_unsigned(cmp, left, right)
 
 
 @overload
