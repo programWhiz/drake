@@ -522,3 +522,66 @@ def test_loop():
     for a in (1, 10, 4, 3, 12, 0, -1):
         result = run_ir_code(module, "test_func", cfunc_type, [a])
         assert result == max(2 * a, 0)
+
+
+def test_class():
+    int_type = ll.IntType(32)
+
+    pair_class = {
+        "name": "Pair_i32",
+        "type": "class",
+        "id": next_id(),
+        "inst_vars": [
+            { "name": "a", "id": next_id(), "type": int_type },
+            { "name": "b", "id": next_id(), "type": int_type },
+        ]
+    }
+
+    pair = { "name": "pair", "id": next_id(), "type": pair_class }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    # return pair.a if a > 0 else pair.b
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [],
+        "instrs": [
+            # define "pair"
+            {
+              "op": "alloca",
+              "ref": pair,
+              "type": { "type": "ptr", "class": pair_class }
+            },
+            # pair.a = 42
+            {
+                "op": "store",
+                "ref": { "op": "gep", "ref": pair, "value": 0 },
+                "value": { "op": "const_val", "value": ll.Constant(int_type, 42) }
+            },
+            # pair.b = -3
+            {
+                "op": "store",
+                "ref": { "op": "gep", "ref": pair, "value": 1 },
+                "value": { "op": "const_val", "value": ll.Constant(int_type, -3) }
+            },
+            # return pair.a
+            {
+                "op": "ret",
+                "value": {
+                    "op": "load", "ref": { "op": "gep", "ref": pair, "value": 0 }
+                }
+            }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test",
+        "classes": { pair_class['id']: pair_class },
+        "funcs": { func_def['id']: func_def }
+    })
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    result = run_ir_code(module, "test_func", cfunc_type, [1])
+    assert result == 42
