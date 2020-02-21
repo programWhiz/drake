@@ -368,16 +368,16 @@ def test_if_else_block():
                     "left": { "op": "func_arg", "value": 0 },
                     "right": { "op": "func_arg", "value": 1 },
                 },
-                "true": {
+                "true": [{
                     "op": "store",
                     "ref": c,
                     "value": { "op": "func_arg", "value": 0 },
-                },
-                "false": {
+                }],
+                "false": [{
                     "op": "store",
                     "ref": c,
                     "value": { "op": "func_arg", "value": 1 },
-                }
+                }]
             },
             # return c
             { "op": "ret", "value": { "op": "load", "ref": c } }
@@ -422,11 +422,11 @@ def test_if_block():
                     "left": { "op": "func_arg", "value": 1 },
                     "right": { "op": "func_arg", "value": 0 },
                 },
-                "true": {
+                "true": [{
                     "op": "store",
                     "ref": c,
                     "value": { "op": "func_arg", "value": 1 },
-                },
+                }]
             },
             # return c
             { "op": "ret", "value": { "op": "load", "ref": c } }
@@ -449,3 +449,76 @@ def test_if_block():
         for b in (7, -1, 0, 4, 8, 20):
             result = run_ir_code(module, "test_func", cfunc_type, [a, b])
             assert result == expect(a, b)
+
+
+def test_loop():
+    int_type = ll.IntType(32)
+    a = { "name": "a", "id": next_id(), "type": int_type }
+    c = { "name": "c", "id": next_id(), "type": int_type }
+    i = { "name": "i", "id": next_id(), "type": int_type }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    # def func(a):
+    #   b = 0
+    #   while i < a:
+    #       b += 2
+    #       i += 1
+    #   return c
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [a],
+        "instrs": [
+            # c = 0
+            { "op": "alloca", "ref": c },
+            { "op": "store", "ref": c, "value": { "op": "const_val", "value": ll.Constant(int_type, 0) } },
+            # i = 0
+            { "op": "alloca", "ref": i },
+            { "op": "store", "ref": i, "value": { "op": "const_val", "value": ll.Constant(int_type, 0) } },
+            # if b > a: c = b;
+            {
+                "op": "loop",
+                # i < a
+                "cond": {
+                    "op": "s<",
+                    "left": { "op": "load", "ref": i },
+                    "right": { "op": "func_arg", "value": 0 },
+                },
+                "body": [
+                    # c += 2
+                    {
+                        "op": "store",
+                        "ref": c,
+                        "value": {
+                            "op": "add",
+                            "left": { "op": "load", "ref": c },
+                            "right": { "op": "const_val", "value": ll.Constant(int_type, 2) },
+                        }
+                    },
+                    # i += 1
+                    {
+                        "op": "store",
+                        "ref": i,
+                        "value": {
+                            "op": "add",
+                            "left": { "op": "load", "ref": i },
+                            "right": { "op": "const_val", "value": ll.Constant(int_type, 1) },
+                        }
+                    },
+                ],
+            },
+            # return c
+            { "op": "ret", "value": { "op": "load", "ref": c } }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test", "funcs": { func_def['id']: func_def }
+    })
+
+    cfunc_type = CFUNCTYPE(c_int32, c_int32)
+
+    for a in (1, 10, 4, 3, 12, 0, -1):
+        result = run_ir_code(module, "test_func", cfunc_type, [a])
+        assert result == max(2 * a, 0)

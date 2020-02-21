@@ -139,8 +139,8 @@ def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
     tblock = bb.append_basic_block()
     exit_blk = bb.append_basic_block()
 
-    false_instr = instr.get('false')
-    if false_instr:
+    false_instrs = instr.get('false')
+    if false_instrs:
         fblock = bb.append_basic_block()
     else:
         fblock = exit_blk
@@ -148,14 +148,40 @@ def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
     bb.cbranch(cond, tblock, fblock)
 
     bb.position_at_end(tblock)
-    compile_instruction_ir(bb, instr['true'], scope)
+    for true_instr in instr['true']:
+        compile_instruction_ir(bb, true_instr, scope)
     bb.branch(exit_blk)
 
-    if false_instr:
+    if false_instrs:
         bb.position_at_end(fblock)
-        compile_instruction_ir(bb, false_instr, scope)
+        for false_instr in false_instrs:
+            compile_instruction_ir(bb, false_instr, scope)
         bb.branch(exit_blk)
 
+    bb.position_at_end(exit_blk)
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("loop"), scope: dict):
+    check_cond = bb.append_basic_block()
+    body = bb.append_basic_block()
+    exit_blk = bb.append_basic_block()
+
+    # begin the loop
+    bb.branch(check_cond)
+
+    # Loop condition, jump to body or end
+    bb.position_at_end(check_cond)
+    cond = compile_instruction_ir(bb, instr['cond'], scope)
+    bb.cbranch(cond, body, exit_blk)
+
+    # Body, run set of body instructions
+    bb.position_at_end(body)
+    for body_instr in instr['body']:
+        compile_instruction_ir(bb, body_instr, scope)
+    bb.branch(check_cond)   # retry loop condition
+
+    # Exit loop
     bb.position_at_end(exit_blk)
 
 
