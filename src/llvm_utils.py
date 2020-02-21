@@ -1,3 +1,4 @@
+from ctypes import CFUNCTYPE
 from datetime import datetime
 import logging
 import os
@@ -73,8 +74,42 @@ def compile_module_llvm(module_path:str, module:ll.Module) -> str:
     return obj_file_path
 
 
+def create_execution_engine():
+    """
+    Create an ExecutionEngine suitable for JIT code generation on
+    the host CPU.  The engine is reusable for an arbitrary number of
+    modules.
+    """
+    # Create a target machine representing the host
+    target = llvm.Target.from_default_triple()
+    target_machine = target.create_target_machine()
+    # And an execution engine with an empty backing module
+    backing_mod = llvm.parse_assembly("")
+    engine = llvm.create_mcjit_compiler(backing_mod, target_machine)
+    return engine
+
+
+def run_ir_code(module:ll.Module, func_name:str, cfunctype:CFUNCTYPE, func_args:list):
+    if llvm_target is None:
+        init_llvm_compiler()
+
+    module.triple = llvm_target.triple
+    module.data_layout = llvm_target_machine.target_data
+
+    mod = llvm.parse_assembly(str(module))
+    mod.verify()
+
+    engine = create_execution_engine()
+    engine.add_module(mod)
+    engine.finalize_object()
+    engine.run_static_constructors()
+
+    func_ptr = engine.get_function_address(func_name)
+    cfunc = cfunctype(func_ptr)
+    return cfunc(*func_args)
+
+
 def run_cli_cmd(cmd):
-    # cmd = ' '.join(shlex.quote(arg) for arg in cmd)
     proc = subprocess.run(cmd, stdout=PIPE, stderr=PIPE)
     print(proc.stdout.decode('utf-8'), file=sys.stdout)
     print(proc.stderr.decode('utf-8'), file=sys.stderr)
@@ -94,3 +129,18 @@ def create_binary_executable(outpath:str, module_list:List[str], run_exe=False):
         end_time = datetime.utcnow()
         logging.info("Executable %s exited with code: %d", outpath, return_code)
         logging.info("Executable %s duration: %s", outpath, end_time - start_time)
+
+
+def is_primitive_ptr(t):
+    if not t.type.is_pointer:
+        return False   # not a pointer to anything
+    p = t.type.pointee
+    prim_types = (ll.IntType, ll.HalfType, ll.FloatType, ll.DoubleType)
+    # Pointer to primitive type
+    if isinstance(p, prim_types):
+        return True
+    # Pointer to a constant primitive type
+    if isinstance(p, ll.Constant) and isinstance(p.constant, prim_types):
+        return True
+    return False
+

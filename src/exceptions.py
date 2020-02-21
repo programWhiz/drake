@@ -17,3 +17,11 @@ class SymbolNotFound(BuildException):
 
 class ParseException(BuildException):
     pass
+
+
+class AmbiguousOverloadError(BuildException):
+    pass
+
+
+class InvalidOperationError(BuildException):
+    pass

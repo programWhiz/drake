@@ -312,7 +312,6 @@ def test_comparisons():
     _test_comparisons(a, b, a > b, "u<=", *args)
 
 
-
 def _test_comparisons(A, B, expect, opname, arg_type, c_arg_type):
     bool_type = ll.IntType(1)
     a = { "name": "a", "id": next_id(), "type": arg_type }
@@ -345,3 +344,108 @@ def _test_comparisons(A, B, expect, opname, arg_type, c_arg_type):
     result = run_ir_code(module, "test_func", cfunc_type, [A, B])
     result = (result != 0)  # cast from int to bool
     assert result == expect
+
+
+def test_if_else_block():
+    int_type = ll.IntType(32)
+    a = { "name": "a", "id": next_id(), "type": int_type }
+    b = { "name": "b", "id": next_id(), "type": int_type }
+    c = { "name": "c", "id": next_id(), "type": int_type }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    # define function: a if a > b else b
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [a, b],
+        "instrs": [
+            { "op": "alloca", "ref": c },
+            {
+                "op": "if",
+                "cond": {
+                    "op": "s>",
+                    "left": { "op": "func_arg", "value": 0 },
+                    "right": { "op": "func_arg", "value": 1 },
+                },
+                "true": {
+                    "op": "store",
+                    "ref": c,
+                    "value": { "op": "func_arg", "value": 0 },
+                },
+                "false": {
+                    "op": "store",
+                    "ref": c,
+                    "value": { "op": "func_arg", "value": 1 },
+                }
+            },
+            # return c
+            { "op": "ret", "value": { "op": "load", "ref": c } }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test", "funcs": { func_def['id']: func_def }
+    })
+
+    cfunc_type = CFUNCTYPE(c_int32, c_int32, c_int32)
+
+    for a in (1, -4, 10, 3, 12):
+        for b in (7, -1, 0, 8, 20):
+            result = run_ir_code(module, "test_func", cfunc_type, [a, b])
+            expect = a if a > b else b
+            assert result == expect
+
+
+def test_if_block():
+    int_type = ll.IntType(32)
+    a = { "name": "a", "id": next_id(), "type": int_type }
+    b = { "name": "b", "id": next_id(), "type": int_type }
+    c = { "name": "c", "id": next_id(), "type": int_type }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    # define function: a if a > b else b
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [a, b],
+        "instrs": [
+            { "op": "alloca", "ref": c },
+            # c = a
+            { "op": "store", "ref": c, "value": { "op": "func_arg", "value": 0 } },
+            # if b > a: c = b;
+            {
+                "op": "if",
+                "cond": {
+                    "op": "s>",
+                    "left": { "op": "func_arg", "value": 1 },
+                    "right": { "op": "func_arg", "value": 0 },
+                },
+                "true": {
+                    "op": "store",
+                    "ref": c,
+                    "value": { "op": "func_arg", "value": 1 },
+                },
+            },
+            # return c
+            { "op": "ret", "value": { "op": "load", "ref": c } }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test", "funcs": { func_def['id']: func_def }
+    })
+
+    cfunc_type = CFUNCTYPE(c_int32, c_int32, c_int32)
+
+    def expect(a, b):
+        c = a
+        if b > a:
+            c = b
+        return c
+
+    for a in (1, -4, 10, 4, 3, 12):
+        for b in (7, -1, 0, 4, 8, 20):
+            result = run_ir_code(module, "test_func", cfunc_type, [a, b])
+            assert result == expect(a, b)

@@ -38,7 +38,10 @@ def compile_func_ir(module, func):
         compile_instruction_ir(bb, instr, scope)
 
 
-llvm_binary_ops = { 'add', 'fadd', 'sub', 'fsub', 'mul', 'fmul', 'sdiv', 'udiv', 'fdiv', 'and_', 'or_', 'xor' }
+llvm_binary_ops = {
+    'add', 'fadd', 'sub', 'fsub', 'mul', 'fmul', 'sdiv', 'udiv', 'fdiv', 'and_', 'or_', 'xor',
+    'fabs', 'srem', 'urem', 'frem', 'shl', 'lshr', 'ashr',
+}
 
 llvm_comparison = {
     'f<', 'f<=', 'f!=', 'f==', 'f>=', 'f>',
@@ -48,7 +51,7 @@ llvm_comparison = {
 
 llvm_zero_ops = { 'ret_void' }
 
-llvm_one_ops = { 'ret', 'not_', }
+llvm_one_ops = { 'ret', 'not_','neg' }
 
 is_binary_op = lambda x: x['op'] in llvm_binary_ops
 is_zero_op = lambda x: x['op'] in llvm_zero_ops
@@ -129,6 +132,31 @@ def compile_instruction_ir(bb, instr: is_op("load"), scope: dict):
 @overload
 def compile_instruction_ir(bb, instr: is_op("const_val"), scope: dict):
     return instr['value']
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
+    cond = compile_instruction_ir(bb, instr['cond'], scope)
+    tblock = bb.append_basic_block()
+    exit_blk = bb.append_basic_block()
+
+    false_instr = instr.get('false')
+    if false_instr:
+        fblock = bb.append_basic_block()
+    else:
+        fblock = exit_blk
+
+    bb.cbranch(cond, tblock, fblock)
+
+    bb.position_at_end(tblock)
+    compile_instruction_ir(bb, instr['true'], scope)
+    bb.branch(exit_blk)
+
+    if false_instr:
+        bb.position_at_end(fblock)
+        compile_instruction_ir(bb, false_instr, scope)
+        bb.branch(exit_blk)
+
+    bb.position_at_end(exit_blk)
 
 
 def numeric(is_int=True, bits=32):
