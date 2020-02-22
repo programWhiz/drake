@@ -76,26 +76,14 @@ These builtin data structures are supported:
 
 **dict** an unordered key value pair store with O(1) lookup
 
-**tree** an ordered key value pair store with O(log n) lookup
-
-**minheap** a semi-ordered collection, retrieves smallest values in O(1) time
-
-**maxheap** a semi-ordered, retrieves largest values in O(1) time
-
-**deque** a list of items with efficient push/pop at head and tail
-
-**linklist** a linked list, which allows efficient insertion and deletion anywhere in the list.
-
-
 ### Comprehensions:
 ```
 # A list comprehension
 x = [ item for item in items if cond(item) ]
 # A set comprehension
 x = set( item for item in items if cond(item) )
-# A key/value comprehension (default is dict)
-x = { item.key: item.value for item in items if cond(item) } 
-x = tree({ item.key: item.value for item in items if cond(item) })
+# A dictionary comprehension
+x = { item.key: item.value for item in items if cond(item) }
 ```
 
 ### Type hints:
@@ -111,10 +99,11 @@ The type of a collection can be fully inferred, or specified to different levels
 ```
 x = [ 1, 2, 3 ]   # x is a collection, list of integers is implied
 set y = [ 1, 2, 3 ]     # y is a set, integers is implied
-set(int) z              # z is a set of integers
-set(int32) w            # w is a set of 32-bit integers
-set(int32|str) u        # u is a set of 32-bit integers or strings
-set(set(int32|str)) v   # v is a set of sets of 32-bit integers or strings
+set<int> z              # z is a set of integers
+set<int32> w            # w is a set of 32-bit integers
+set<int32|str> u        # u is a set of 32-bit integers or strings
+set<set<int32|str>> v   # v is a set of sets of 32-bit integers or strings
+dict<int32|str, float> v   # v is a dictionary with keys that can be integers or strings, and values that must be floats
 ```
 
 ### Type hints for classes:
