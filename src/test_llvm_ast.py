@@ -1,7 +1,7 @@
 import math
 import pytest
 import llvmlite.ir as ll
-from ctypes import CFUNCTYPE, c_int32, c_int8, c_float, c_uint32
+from ctypes import CFUNCTYPE, c_int32, c_int8, c_float, c_uint32, c_int64, c_int16, c_double
 from src.llvm_utils import run_ir_code
 from src.llvm_ast import compile_module_ir, next_id
 
@@ -556,20 +556,20 @@ def test_class():
             # pair.a = 42
             {
                 "op": "store",
-                "ref": { "op": "gep", "ref": pair, "value": 0 },
+                "ref": { "op": "gep", "ref": pair, "value": [ 0, 0 ] },
                 "value": { "op": "const_val", "value": ll.Constant(int_type, 42) }
             },
             # pair.b = -3
             {
                 "op": "store",
-                "ref": { "op": "gep", "ref": pair, "value": 1 },
+                "ref": { "op": "gep", "ref": pair, "value": [ 0, 1 ] },
                 "value": { "op": "const_val", "value": ll.Constant(int_type, -3) }
             },
             # return pair.a
             {
                 "op": "ret",
                 "value": {
-                    "op": "load", "ref": { "op": "gep", "ref": pair, "value": 0 }
+                    "op": "load", "ref": { "op": "gep", "ref": pair, "value": [ 0, 0 ] }
                 }
             }
         ]
@@ -585,3 +585,142 @@ def test_class():
 
     result = run_ir_code(module, "test_func", cfunc_type, [1])
     assert result == 42
+
+
+def test_sizeof():
+    _test_sizeof(ll.IntType(8), c_int8, 1)
+    _test_sizeof(ll.IntType(16), c_int16, 2)
+    _test_sizeof(ll.IntType(32), c_int32, 4)
+    _test_sizeof(ll.IntType(64), c_int64, 8)
+    _test_sizeof(ll.FloatType(), c_float, 4)
+    _test_sizeof(ll.DoubleType(), c_double, 8)
+
+
+def _test_sizeof(ll_type, c_type, expect_size):
+    int_type = ll.IntType(64)
+    arg1 = { "name": "arg1", "id": next_id(), "type": ll_type }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    # return pair.a if a > 0 else pair.b
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [ arg1 ],
+        "instrs": [{
+            "op": "ret",
+            "value": {
+                "op": "sizeof",
+                "ref": { "op": "func_arg", "value": 0 }
+            }
+        }]
+    }
+
+    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int64, c_type)
+    result = run_ir_code(module, "test_func", cfunc_type, [ 0 ])
+    assert result == expect_size
+
+
+def test_malloc_free_single_int():
+    int_type = ll.IntType(32)
+
+    my_ptr = { "name": "my_ptr", "id": next_id(), "type": int_type }
+    temp_var = { "name": "temp_var", "id": next_id(), "type": int_type }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [],
+        "instrs": [
+            # my_ptr = new int[1];
+            { "op": "malloc", "ref": my_ptr },
+            # *my_ptr = 32
+            {
+              "op": "store",
+              "ref": my_ptr,
+              "value": { "op": "const_val", "value": ll.Constant(int_type, 32) }
+            },
+            # int temp_var = my_ptr[0];
+            { "op": "alloca", "ref": temp_var },
+            {
+                "op": "store",
+                "ref": temp_var,
+                "value": {
+                    "op": "load",
+                    "ref": my_ptr,
+                }
+            },
+            # free(my_ptr)
+            { "op": "free", "ref": my_ptr },
+            # return temp_var
+            { "op": "ret", "value": { "op": "load", "ref": temp_var } }
+        ]
+    }
+
+    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    result = run_ir_code(module, "test_func", cfunc_type, [])
+    assert result == 32
+
+
+def test_malloc_free_int_array():
+    int_type = ll.IntType(32)
+
+    my_ptr = { "name": "my_ptr", "id": next_id(), "type": int_type, "count": 10 }
+    temp_var = { "name": "temp_var", "id": next_id(), "type": int_type }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [],
+        "instrs": [
+            # my_ptr = new int[10];
+            { "op": "malloc", "ref": my_ptr },
+            # my_ptr[5] = 32
+            {
+                "op": "store",
+                "ref": {
+                    "op": "gep",
+                    "ref": my_ptr,
+                    "value": 5
+                },
+                "value": { "op": "const_val", "value": ll.Constant(int_type, 32) }
+            },
+            # int temp_var = my_ptr[5];
+            { "op": "alloca", "ref": temp_var },
+            {
+                "op": "store",
+                "ref": temp_var,
+                "value": {
+                    "op": "load",
+                    "ref": {
+                        "op": "gep",
+                        "ref": my_ptr,
+                        "value": 5
+                    }
+                }
+            },
+            # free(my_ptr)
+            { "op": "free", "ref": my_ptr },
+            # return temp_var
+            { "op": "ret", "value": { "op": "load", "ref": temp_var } }
+        ]
+    }
+
+    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    result = run_ir_code(module, "test_func", cfunc_type, [])
+    assert result == 32

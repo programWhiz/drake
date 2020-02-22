@@ -1,3 +1,5 @@
+import sys
+
 import llvmlite.ir as ll
 from src.exceptions import *
 from multimethod import isa, overload
@@ -5,7 +7,12 @@ from multimethod import isa, overload
 
 def compile_module_ir(module):
     ll_mod = ll.Module(name=module["name"])
-    scope = { 'module': module, 'll_module': ll_mod, 'classes': {} }
+
+    scope = {
+        'module': module,
+        'll_module': ll_mod,
+        'classes': {},
+        'intrinsics': compile_module_intrinsics(ll_mod) }
 
     for key, class_def in module.get("classes", { }).items():
         compile_class_ir(ll_mod, class_def, scope)
@@ -14,6 +21,17 @@ def compile_module_ir(module):
         compile_func_ir(ll_mod, func, scope)
 
     return ll_mod
+
+
+def compile_module_intrinsics(module) -> dict:
+    void_type = ll.VoidType()
+    byte_ptr = ll.PointerType(ll.IntType(8))
+    i64 = ll.IntType(64)
+
+    malloc = module.declare_intrinsic('malloc', [], ll.FunctionType(byte_ptr, [ i64 ] ))
+    free = module.declare_intrinsic('free', [], ll.FunctionType(void_type, [ byte_ptr ]))
+
+    return { "malloc": malloc, "free": free }
 
 
 def compile_module_init_func(module):
@@ -137,6 +155,82 @@ def compile_instruction_ir(bb, instr: is_op("alloca"), scope: dict):
     return ptr
 
 
+def sizeof_i32(bb, ir_type):
+    null_ptr = ll.Constant(ll.PointerType(ir_type), 'null')
+    size = bb.gep(null_ptr, [ ll.Constant(ll.IntType(32), 1) ], inbounds=False)
+    size = bb.ptrtoint(size, ll.IntType(32))
+    return size
+
+
+def sizeof_i64(bb, ir_type):
+    size32 = sizeof_i32(bb, ir_type)
+    return bb.zext(size32, ll.IntType(64))
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("sizeof"), scope: dict):
+    ref = instr['ref']
+    if 'op' in ref:
+        ref = compile_instruction_ir(bb, ref, scope)
+        ref_type = ref.type
+    else:
+        ref_type = instr.get('type', ref.get('type'))
+
+    ref_type = get_alloc_type(ref_type, scope)
+    return sizeof_i64(bb, ref_type)
+
+
+def get_alloc_count(bb, instr, scope):
+    count = instr.get('count', instr['ref'].get('count'))
+    if count is None:
+        return
+
+    if isinstance(count, dict):   # instruction
+        return compile_instruction_ir(bb, count, scope)
+    if isinstance(count, int):
+        # A count of one is just a pointer
+        if count == 1:
+            return None
+        return ll.Constant(ll.IntType(64), count)
+    elif isinstance(count, ll.IntType):
+        return count
+
+    print("Allocation `count` must be int, ll.IntType, or instruction. Found:", count, file=sys.stdout)
+    raise BuildException("Allocation `count` must be int, ll.IntType, or instruction.")
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("malloc"), scope: dict):
+    ref = instr['ref']
+    ref_type = instr.get('type', ref.get('type'))
+    ref_type = get_alloc_type(ref_type, scope)
+    size_bytes = sizeof_i64(bb, ref_type)
+
+    count = get_alloc_count(bb, instr, scope)
+    if count:
+        # TODO: use _with_overflow based on config?
+        size_bytes = bb.mul(size_bytes, count)
+
+    malloc_func = scope['intrinsics']['malloc']
+    byte_ptr = bb.call(malloc_func, [ size_bytes ], name=ref["name"])
+    ptr = bb.bitcast(byte_ptr, ll.PointerType(ref_type))
+
+    scope['ptrs'][ref['id']] = ptr
+    return ptr
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("free"), scope: dict):
+    ref = instr['ref']
+
+    ptr = scope['ptrs'].pop(ref['id'])
+    byte_ptr = bb.bitcast(ptr, ll.PointerType(ll.IntType(8)))
+
+    free_func = scope['intrinsics']['free']
+    call_result = bb.call(free_func, [ byte_ptr ], name=ref["name"])
+    return call_result
+
+
 def get_alloc_type(ref_type, scope: dict):
     if isinstance(ref_type, ll.Type):
         return ref_type   # already compiled LLVM type
@@ -152,14 +246,29 @@ def compile_instruction_ir(bb, instr: is_op("gep"), scope: dict):
     ptr_id = instr['ref']['id']
     ptr = scope['ptrs'][ptr_id]
 
-    if isinstance(instr['value'], dict):
-        value = compile_instruction_ir(bb, instr['value'], scope)
-    elif isinstance(instr['value'], int):
-        value = ll.Constant(ll.IntType(32), instr['value'])
+    values = instr.get('value')
+    if values is None:
+        print('Missing `value` key in `gep` instruction: ', instr, file=sys.stderr)
+        raise BuildException('Missing `value` key in `gep` instruction.')
 
-    # TODO: toggle with config option?
-    zero = ll.Constant(ll.IntType(32), 0)
-    return bb.gep(ptr, [zero, value], inbounds=True)
+    if not isinstance(values, (list, tuple)):
+        values = [ values ]
+
+    addr_values = []
+    for value in values:
+        if isinstance(value, dict):
+            addr_value = compile_instruction_ir(bb, value, scope)
+        elif isinstance(value, int):
+            addr_value = ll.Constant(ll.IntType(32), value)
+        elif isinstance(value, ll.Type):
+            addr_value = value
+        else:
+            print(f"Address values in `gep` should be instruction or integer constant. Found:", value, file=sys.stderr)
+            raise BuildException(f"Address values in `gep` should be instruction or integer constant.")
+
+        addr_values.append(addr_value)
+
+    return bb.gep(ptr, addr_values, inbounds=True)
 
 
 @overload
