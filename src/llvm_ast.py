@@ -150,7 +150,8 @@ def compile_instruction_ir(bb, instr: is_op("alloca"), scope: dict):
     ref = instr['ref']
     ref_type = instr.get('type', ref.get('type'))
     ref_type = get_alloc_type(ref_type, scope)
-    ptr = bb.alloca(ref_type, name=ref["name"])
+    count = get_alloc_count(bb, instr, scope)
+    ptr = bb.alloca(ref_type, name=ref["name"], size=count)
     scope['ptrs'][ref['id']] = ptr
     return ptr
 

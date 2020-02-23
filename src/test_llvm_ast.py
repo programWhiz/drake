@@ -724,3 +724,47 @@ def test_malloc_free_int_array():
 
     result = run_ir_code(module, "test_func", cfunc_type, [])
     assert result == 32
+
+
+def test_alloc_array():
+    int_type = ll.IntType(32)
+
+    my_ptr = { "name": "my_ptr", "id": next_id(), "type": int_type, "count": 10 }
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [],
+        "instrs": [
+            # my_ptr = new int[10];
+            { "op": "alloca", "ref": my_ptr },
+            # my_ptr[5] = 32
+            {
+                "op": "store",
+                "ref": {
+                    "op": "gep",
+                    "ref": my_ptr,
+                    "value": 5
+                },
+                "value": { "op": "const_val", "value": ll.Constant(int_type, 32) }
+            },
+            # return my_ptr[5]
+            {
+                "op": "ret",
+                "value": {
+                    "op": "load",
+                    "ref": { "op": "gep", "ref": my_ptr, "value": 5 }
+                }
+            }
+        ]
+    }
+
+    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    result = run_ir_code(module, "test_func", cfunc_type, [])
+    assert result == 32
