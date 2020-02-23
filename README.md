@@ -58,6 +58,53 @@ fn foo(n):
     print(n)
 ```
 
+### Flow Control
+Standard if / else syntax, with keyword elif for "else if" blocks:
+```
+if x > 3:
+  y += 4
+elif x > 10:
+  y += 6
+else:
+  y += 8
+```
+
+### Loops
+
+For loops iterate over iterators:
+```
+for i in range(10, 100):
+   print(i)
+```
+
+While loops allow full loop control:
+```
+i = 0
+while i < 100:
+   print(i)
+   i += 1
+```
+
+The "do once" means the loop body executes once before checking the exit condition:
+```
+i = 0
+do while i < 100:
+   print(i)
+   i += 1
+```
+
+The keyword "break" exits the loop, and "continue" jumps back to the loop start:
+```
+for i in range(100):
+   if i % 10 == 0:
+     break  # stop at i == 10
+   if i % 3 == 0:
+     continue   # restart when i in (0, 3, 6, 9)
+   print(i)
+
+=> 1, 2, 4, 5, 7, 8
+``` 
+
 ### Data structures:
 ```
 # declare a collection of items
