@@ -44,7 +44,7 @@ def _test_ir_binary_op_int32(op_name, left_val, right_val, expect):
 
     module = {
         "name": "test_" + op_name,
-        "funcs": { func_def['id']: func_def }
+        "funcs": [ func_def ]
     }
 
     module = compile_module_ir(module)
@@ -78,7 +78,7 @@ def _test_ir_binary_op_float32(op_name, left_val, right_val, expect):
 
     module = {
         "name": "test_" + op_name,
-        "funcs": { func_def['id']: func_def }
+        "funcs": [ func_def ]
     }
 
     module = compile_module_ir(module)
@@ -139,7 +139,7 @@ def test_intermediate_var():
 
     module = {
         "name": "test_store",
-        "funcs": { func_def['id']: func_def }
+        "funcs": [ func_def ]
     }
 
     module = compile_module_ir(module)
@@ -177,7 +177,7 @@ def test_constants():
 
     module = compile_module_ir({
         "name": "test_store",
-        "funcs": { func_def['id']: func_def }
+        "funcs": [ func_def ]
     })
 
     expect = 2 * 3.1415
@@ -222,7 +222,7 @@ def _test_bool_op(A, B, opname, expect):
 
     module = compile_module_ir({
         "name": "test",
-        "funcs": { func_def['id']: func_def }
+        "funcs": [ func_def ]
     })
 
     cfunc_type = CFUNCTYPE(c_int8, c_int8, c_int8)
@@ -254,7 +254,7 @@ def test_boolean_not():
     }
 
     module = compile_module_ir({
-        "name": "test", "funcs": { func_def['id']: func_def }
+        "name": "test", "funcs": [ func_def ]
     })
 
     cfunc_type = CFUNCTYPE(c_int8, c_int8)
@@ -336,7 +336,7 @@ def _test_comparisons(A, B, expect, opname, arg_type, c_arg_type):
     }
 
     module = compile_module_ir({
-        "name": "test", "funcs": { func_def['id']: func_def }
+        "name": "test", "funcs": [ func_def ]
     })
 
     cfunc_type = CFUNCTYPE(c_int8, c_arg_type, c_arg_type)
@@ -385,7 +385,7 @@ def test_if_else_block():
     }
 
     module = compile_module_ir({
-        "name": "test", "funcs": { func_def['id']: func_def }
+        "name": "test", "funcs": [ func_def ]
     })
 
     cfunc_type = CFUNCTYPE(c_int32, c_int32, c_int32)
@@ -434,7 +434,7 @@ def test_if_block():
     }
 
     module = compile_module_ir({
-        "name": "test", "funcs": { func_def['id']: func_def }
+        "name": "test", "funcs": [ func_def ]
     })
 
     cfunc_type = CFUNCTYPE(c_int32, c_int32, c_int32)
@@ -514,7 +514,7 @@ def test_loop():
     }
 
     module = compile_module_ir({
-        "name": "test", "funcs": { func_def['id']: func_def }
+        "name": "test", "funcs": [ func_def ]
     })
 
     cfunc_type = CFUNCTYPE(c_int32, c_int32)
@@ -577,8 +577,8 @@ def test_class():
 
     module = compile_module_ir({
         "name": "test",
-        "classes": { pair_class['id']: pair_class },
-        "funcs": { func_def['id']: func_def }
+        "classes": [ pair_class ],
+        "funcs": [ func_def ]
     })
 
     cfunc_type = CFUNCTYPE(c_int32)
@@ -616,7 +616,7 @@ def _test_sizeof(ll_type, c_type, expect_size):
         }]
     }
 
-    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    module = compile_module_ir({ "name": "test", "funcs": [ func_def ] })
     print(module)
 
     cfunc_type = CFUNCTYPE(c_int64, c_type)
@@ -662,7 +662,7 @@ def test_malloc_free_single_int():
         ]
     }
 
-    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    module = compile_module_ir({ "name": "test", "funcs": [ func_def ] })
     print(module)
 
     cfunc_type = CFUNCTYPE(c_int32)
@@ -717,7 +717,7 @@ def test_malloc_free_int_array():
         ]
     }
 
-    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    module = compile_module_ir({ "name": "test", "funcs": [ func_def ] })
     print(module)
 
     cfunc_type = CFUNCTYPE(c_int32)
@@ -761,10 +761,43 @@ def test_alloc_array():
         ]
     }
 
-    module = compile_module_ir({ "name": "test", "funcs": { func_def['id']: func_def } })
+    module = compile_module_ir({ "name": "test", "funcs": [ func_def ] })
     print(module)
 
     cfunc_type = CFUNCTYPE(c_int32)
 
     result = run_ir_code(module, "test_func", cfunc_type, [])
+    assert result == 32
+
+
+def test_call_func():
+    int_type = ll.IntType(32)
+    ret = { "name": "ret", "id": next_id(), "type": int_type }
+
+    inner_func = {
+        "name": "inner_func",
+        "id": next_id(), "ret": ret, "args": [], "instrs": [
+            { "op": "ret", "value": { "op": "const_val", "value": ll.Constant(int_type, 32) } }
+        ]
+    }
+
+    outer_func = {
+        "name": "outer_func",
+        "id": next_id(), "ret": ret, "args": [], "instrs": [
+            {
+                "op": "ret",
+                "value": { "op": "call", "func": inner_func, "args": [] }
+            }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test",
+        "funcs": [ inner_func, outer_func ]
+    })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    result = run_ir_code(module, "outer_func", cfunc_type, [])
     assert result == 32

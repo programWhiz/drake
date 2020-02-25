@@ -1,4 +1,5 @@
 import sys
+from collections import OrderedDict
 
 import llvmlite.ir as ll
 from src.exceptions import *
@@ -11,13 +12,15 @@ def compile_module_ir(module):
     scope = {
         'module': module,
         'll_module': ll_mod,
-        'classes': {},
-        'intrinsics': compile_module_intrinsics(ll_mod) }
+        'classes': OrderedDict(),
+        'funcs': OrderedDict(),
+        'intrinsics': compile_module_intrinsics(ll_mod),
+    }
 
-    for key, class_def in module.get("classes", { }).items():
+    for class_def in module.get("classes", []):
         compile_class_ir(ll_mod, class_def, scope)
 
-    for key, func in module.get("funcs", { }).items():
+    for func in module.get("funcs", []):
         compile_func_ir(ll_mod, func, scope)
 
     return ll_mod
@@ -26,12 +29,22 @@ def compile_module_ir(module):
 def compile_module_intrinsics(module) -> dict:
     void_type = ll.VoidType()
     byte_ptr = ll.PointerType(ll.IntType(8))
+    i32 = ll.IntType(32)
     i64 = ll.IntType(64)
 
-    malloc = module.declare_intrinsic('malloc', [], ll.FunctionType(byte_ptr, [ i64 ] ))
-    free = module.declare_intrinsic('free', [], ll.FunctionType(void_type, [ byte_ptr ]))
+    intrinsics = {}
+    def decl(name, *args, **kwargs):
+        functype = ll.FunctionType(*args, **kwargs)
+        intrinsics[name] = module.declare_intrinsic(name, [], functype)
 
-    return { "malloc": malloc, "free": free }
+    decl('malloc', byte_ptr, [i64])
+    decl('free', void_type, [byte_ptr])
+    decl('printf', i32, [ byte_ptr ], var_arg=True)
+    decl('sprintf', i32, [ byte_ptr, byte_ptr ], var_arg=True)
+    decl('sprintf_s', i32, [ byte_ptr, i32, byte_ptr ], var_arg=True)
+    decl('snprintf', i32, [ byte_ptr, i32, byte_ptr ], var_arg=True)
+
+    return intrinsics
 
 
 def compile_module_init_func(module):
@@ -62,6 +75,8 @@ def compile_func_ir(module, func, scope):
 
     for instr in func["instrs"]:
         compile_instruction_ir(bb, instr, scope)
+
+    scope['funcs'][ func['id'] ] = ll_func
 
 
 def compile_class_ir(module, class_def, scope):
@@ -356,6 +371,14 @@ def compile_instruction_ir(bb, instr: is_op("loop"), scope: dict):
 
     # Exit loop
     bb.position_at_end(exit_blk)
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("call"), scope: dict):
+    func_id = instr['func']['id']
+    fn = scope['funcs'][func_id]
+    args = [ compile_instruction_ir(arg) for arg in instr['args'] ]
+    return bb.call(fn, args)
 
 
 def numeric(is_int=True, bits=32):
