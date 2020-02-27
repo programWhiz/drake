@@ -801,3 +801,34 @@ def test_call_func():
 
     result = run_ir_code(module, "outer_func", cfunc_type, [])
     assert result == 32
+
+
+def test_call_intrinsic():
+    ret = { "name": "ret", "id": next_id(), "type": ll.VoidType() }
+
+    test_func = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [],
+        "instrs": [
+            {
+                "op": "call",
+                "intrinsic": "printf",
+                "args": [
+                    { "op": "const_str", "value": "Hello From China: 你好!\n" },
+                ]
+            },
+            { "op": "ret_void" }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test",
+        "funcs": [ test_func ]
+    })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    run_ir_code(module, "test_func", cfunc_type, [])

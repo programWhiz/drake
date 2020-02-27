@@ -5,6 +5,8 @@ import llvmlite.ir as ll
 from src.exceptions import *
 from multimethod import isa, overload
 
+from src.llvm_string import declare_str_const, gep_str_const
+
 
 def compile_module_ir(module):
     ll_mod = ll.Module(name=module["name"])
@@ -40,6 +42,7 @@ def compile_module_intrinsics(module) -> dict:
     decl('malloc', byte_ptr, [i64])
     decl('free', void_type, [byte_ptr])
     decl('printf', i32, [ byte_ptr ], var_arg=True)
+    decl('printf_s', i32, [ byte_ptr, i32 ], var_arg=True)
     decl('sprintf', i32, [ byte_ptr, byte_ptr ], var_arg=True)
     decl('sprintf_s', i32, [ byte_ptr, i32, byte_ptr ], var_arg=True)
     decl('snprintf', i32, [ byte_ptr, i32, byte_ptr ], var_arg=True)
@@ -322,6 +325,12 @@ def compile_instruction_ir(bb, instr: is_op("const_val"), scope: dict):
 
 
 @overload
+def compile_instruction_ir(bb, instr: is_op("const_str"), scope: dict):
+    s_const = declare_str_const(scope['ll_module'], instr['value'])
+    return gep_str_const(bb, s_const)
+
+
+@overload
 def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
     cond = compile_instruction_ir(bb, instr['cond'], scope)
     tblock = bb.append_basic_block()
@@ -375,10 +384,18 @@ def compile_instruction_ir(bb, instr: is_op("loop"), scope: dict):
 
 @overload
 def compile_instruction_ir(bb, instr: is_op("call"), scope: dict):
-    func_id = instr['func']['id']
-    fn = scope['funcs'][func_id]
-    args = [ compile_instruction_ir(arg) for arg in instr['args'] ]
-    return bb.call(fn, args)
+    intrinsic_name = instr.get('intrinsic')
+    if intrinsic_name:
+        func_ptr = scope['intrinsics'][intrinsic_name]
+    else:  # not an intrinsic function
+        func_ptr = instr['func']
+        # Is it already a function pointer?
+        if not isinstance(func_ptr, ll.Function):
+            func_id = func_ptr['id']
+            func_ptr = scope['funcs'][func_id]
+
+    args = [ compile_instruction_ir(bb, arg, scope) for arg in instr['args'] ]
+    return bb.call(func_ptr, args)
 
 
 def numeric(is_int=True, bits=32):
