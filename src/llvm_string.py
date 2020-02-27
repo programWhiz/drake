@@ -11,7 +11,7 @@ _string_id = 0
 def next_str_id():
     global _string_id
     _string_id += 1
-    return f'str.{_string_id}'
+    return f'str${_string_id}'
 
 
 def declare_str_const(module:ll.Module, s : str):
