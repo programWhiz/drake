@@ -66,12 +66,16 @@ def compile_module_llvm(module_path:str, module:ll.Module) -> str:
     with open(ll_file_path, 'wt') as fptr:
         fptr.write(str(module))
 
+    compile_to_object_code(module_path, ll_file_path, obj_file_path)
+    return obj_file_path
+
+
+def compile_to_object_code(module_path:str, ll_file_path:str, obj_file_path:str):
+    init_llvm_compiler()
     logging.debug(f"Compiling object code from module '%s' to '%s'", module_path, obj_file_path)
     llc_cmd = [llc_exe_path, '-filetype=obj', '-o', obj_file_path, ll_file_path]
     ret = run_cli_cmd(llc_cmd)
     assert ret == 0, f"Failed to build object code from '{module_path}'!"
-
-    return obj_file_path
 
 
 def create_execution_engine():
@@ -80,6 +84,7 @@ def create_execution_engine():
     the host CPU.  The engine is reusable for an arbitrary number of
     modules.
     """
+    init_llvm_compiler()
     # Create a target machine representing the host
     target = llvm.Target.from_default_triple()
     target_machine = target.create_target_machine()
@@ -90,13 +95,15 @@ def create_execution_engine():
 
 
 def run_ir_code(module:ll.Module, func_name:str, cfunctype:CFUNCTYPE, func_args:list):
-    if llvm_target is None:
-        init_llvm_compiler()
+    init_llvm_compiler()
 
     module.triple = llvm_target.triple
     module.data_layout = llvm_target_machine.target_data
+    run_llvm_code(str(module), func_name, cfunctype, func_args)
 
-    mod = llvm.parse_assembly(str(module))
+
+def run_llvm_code(code:str, func_name:str, cfunctype:CFUNCTYPE, func_args:list):
+    mod = llvm.parse_assembly(code)
     mod.verify()
 
     engine = create_execution_engine()
@@ -117,6 +124,11 @@ def run_cli_cmd(cmd):
 
 
 def create_binary_executable(outpath:str, module_list:List[str], run_exe=False):
+    init_llvm_compiler()
+
+    if not isinstance(module_list, (tuple, list)):
+        module_list = [ module_list ]
+
     ret = run_cli_cmd([ 'g++', *module_list, '-o', outpath ])
     assert ret == 0, "Failed to compile modules with g++."
 

@@ -23,9 +23,12 @@ def compile_module_ir(module):
         compile_class_ir(ll_mod, class_def, scope)
 
     for func in module.get("funcs", []):
-        compile_func_ir(ll_mod, func, scope)
+        func['ll_func'] = compile_func_ir(ll_mod, func, scope)
 
     return ll_mod
+
+
+INTRINSIC_FUNC_NAMES = { 'malloc', 'free', 'printf', 'printf_s', 'sprintf', 'sprintf_s', 'snprintf', }
 
 
 def compile_module_intrinsics(module) -> dict:
@@ -79,7 +82,11 @@ def compile_func_ir(module, func, scope):
     for instr in func["instrs"]:
         compile_instruction_ir(bb, instr, scope)
 
-    scope['funcs'][ func['id'] ] = ll_func
+    if not func.get('id'):
+        func['id'] = next_id()
+
+    scope['funcs'][func['id']] = ll_func
+    return ll_func
 
 
 def compile_class_ir(module, class_def, scope):
@@ -291,6 +298,20 @@ def compile_instruction_ir(bb, instr: is_op("gep"), scope: dict):
 
 
 @overload
+def compile_instruction_ir(bb, instr: is_op("global_var"), scope: dict):
+    name = instr.get('name', f'$global.{instr["id"]}')
+    global_var = ll.GlobalVariable(scope['ll_module'], instr['type'], name=name)
+    global_var.global_constant = True
+    global_var.unnamed_addr = True
+    global_var.initializer = instr['value']
+    global_var.global_constant = instr.get('const', False)
+    if 'align' in instr:
+        global_var.align = instr['align']
+
+    scope['ptrs'][instr['id']] = global_var
+    return global_var
+
+@overload
 def compile_instruction_ir(bb, instr: is_op("store"), scope: dict):
     ref = instr['ref']
 
@@ -347,15 +368,25 @@ def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
     bb.position_at_end(tblock)
     for true_instr in instr['true']:
         compile_instruction_ir(bb, true_instr, scope)
-    bb.branch(exit_blk)
+    # true block may terminate with return / jump from another instrunction
+    if not tblock.is_terminated:
+        bb.branch(exit_blk)
 
     if false_instrs:
         bb.position_at_end(fblock)
         for false_instr in false_instrs:
             compile_instruction_ir(bb, false_instr, scope)
-        bb.branch(exit_blk)
+        # false block may terminate with return / jump from another instrunction
+        if not fblock.is_terminated:
+            bb.branch(exit_blk)
 
     bb.position_at_end(exit_blk)
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("trunc"), scope: dict):
+    value = compile_instruction_ir(bb, instr['value'], scope)
+    return bb.trunc(value, instr['type'])
 
 
 @overload

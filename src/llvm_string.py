@@ -26,6 +26,7 @@ def declare_str_const(module:ll.Module, s : str):
     s_const = ll.FormattedConstant(s_array_type, s_chars)
 
     global_val = ll.GlobalVariable(module, s_array_type, name=next_str_id())
+    global_val.align = 1
     global_val.global_constant = True
     global_val.unnamed_addr = True
     global_val.initializer = s_const
@@ -33,8 +34,10 @@ def declare_str_const(module:ll.Module, s : str):
     return global_val
 
 
-def gep_str_const(bb, str_var):
+def gep_str_const(bb:ll.IRBuilder, str_var):
     zero = ll.Constant(ll.IntType(32), 0)
-    s_ptr = bb.gep(str_var, [zero], True)  # x = &c[0]
+    s_ptr = bb.gep(str_var, [zero, zero], True)  # x = &c[0]
+    # s_int = bb.ptrtoint(s_ptr, ll.IntType(64))
     # return int8* (&c[0])
-    return bb.bitcast(s_ptr, ll.PointerType(ll.IntType(8)))
+    # return bb.inttoptr(s_ptr, ll.PointerType(ll.IntType(8)))
+    return s_ptr
