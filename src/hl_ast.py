@@ -5,15 +5,31 @@ from src.exceptions import *
 from src.llvm_ast import next_id, INTRINSIC_FUNC_NAMES
 
 
-def compile_hl_ast(module, is_main=False):
-    ll_mod = {
-        'name': module['name'],
+def make_empty_scope(ll_mod, hl_module):
+    return { 'll_mod': ll_mod, 'hl_mod': hl_module, 'scope': [] }
+
+
+def make_empty_module(hl_module):
+    return {
+        'name': hl_module['name'],
         'funcs': [],
         'classes': []
     }
 
-    scope = { 'll_mod': ll_mod, 'hl_mod': module, 'scope': [] }
 
+def compile_hl_ast(module, is_main=False):
+    ll_mod = make_empty_module(module)
+    scope = make_empty_scope(ll_mod, module)
+
+    init_func = add_module_init_func(module, ll_mod, scope)
+
+    if is_main:
+        push_module_main(ll_mod, init_func)
+
+    return ll_mod
+
+
+def add_module_init_func(module, ll_mod, scope):
     init_func = push_scope(scope, f"{module['name']}.$init")
     push_module_idempotency_instr(scope)
 
@@ -32,11 +48,7 @@ def compile_hl_ast(module, is_main=False):
     }
 
     ll_mod['funcs'].append(init_func)
-
-    if is_main:
-        push_module_main(ll_mod, init_func)
-
-    return ll_mod
+    return init_func
 
 
 def push_module_main(ll_mod, init_func):
@@ -191,38 +203,55 @@ def compile_hl_instr(ast:is_numeric_instr, scope):
 
 
 def make_int(value, precision=32):
-    return {
-        "literal": True,
-        "type": "numeric",
-        "subtype": "int",
-        "precision": precision,
-        "value": value
-    }
+    return make_literal(value, type='numeric', subtype='int', precision=precision)
 
 
 def make_float(value, precision=32):
-    return {
-        "literal": True,
-        "type": "numeric",
-        "subtype": 'float',
-        "precision": precision,
-        "value": value
-    }
+    return make_literal(value, type='numeric', subtype='float', precision=precision)
 
 
 def make_bool(value):
-    return {
-        "literal": True,
-        "type": "numeric",
-        "subtype": "bool",
-        "precision": 1,
-        "value": value
-    }
+    return make_literal(value, type='numeric', subtype='bool', precision=8)
 
 
 def make_str(value):
-    return {
-        "literal": True,
-        "type": "str",
-        "value": value
-    }
+    return make_literal(type='str', value=value, all_strict=True)
+
+
+def make_type(type:str,
+              subtype:str=None,
+              precision:str=None,
+              strict_type:bool=False,
+              strict_subtype:bool=False,
+              strict_precision:bool=False,
+              all_strict:bool=False):
+
+    has_type = type is not None
+    has_subtype = subtype is not None
+    has_prec = precision is not None
+
+    if has_subtype:
+        assert has_type, "Cannot specify 'subtype' without a parent 'type'"
+
+    if has_prec:
+        assert has_subtype, "Cannot specify 'precision' without a 'subtype'"
+
+    out = dict(
+        type = type,
+        subtype = subtype,
+        precision = precision,
+        # We are strict if "all_strict" is set, or each "strict" flag is set,
+        # and the value for that setting is present (can't be strict on None)
+        strict_type = (all_strict or strict_type) and has_type,
+        strict_subtype = (all_strict or strict_subtype) and has_subtype,
+        strict_precision = (all_strict or strict_precision) and has_prec)
+
+    return out
+
+
+def make_literal(value, all_strict=True, **kwargs):
+    # For literals, default to making all strict, we can't modify their type
+    out = make_type(all_strict=all_strict, **kwargs)
+    out['literal'] = True
+    out['value'] = value
+    return out
