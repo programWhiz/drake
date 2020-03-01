@@ -115,14 +115,17 @@ llvm_zero_ops = { 'ret_void' }
 
 llvm_one_ops = { 'ret', 'not_', 'neg' }
 
-is_binary_op = lambda x: x['op'] in llvm_binary_ops
-is_zero_op = lambda x: x['op'] in llvm_zero_ops
-is_single_op = lambda x: x['op'] in llvm_one_ops
-is_comparison = lambda x: x['op'] in llvm_comparison
+def is_in_op_set(x, instr_set):
+    return isinstance(x, dict) and x.get('op') in instr_set
+
+is_binary_op = lambda x: is_in_op_set(x, llvm_binary_ops)
+is_zero_op = lambda x: is_in_op_set(x, llvm_zero_ops)
+is_single_op = lambda x: is_in_op_set(x, llvm_one_ops)
+is_comparison = lambda x: is_in_op_set(x, llvm_comparison)
 
 
 def is_op(op_name):
-    return lambda x: x['op'] == op_name
+    return lambda x: isinstance(x, dict) and x.get('op') == op_name
 
 
 @overload

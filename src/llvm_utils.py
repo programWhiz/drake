@@ -99,7 +99,7 @@ def run_ir_code(module:ll.Module, func_name:str, cfunctype:CFUNCTYPE, func_args:
 
     module.triple = llvm_target.triple
     module.data_layout = llvm_target_machine.target_data
-    run_llvm_code(str(module), func_name, cfunctype, func_args)
+    return run_llvm_code(str(module), func_name, cfunctype, func_args)
 
 
 def run_llvm_code(code:str, func_name:str, cfunctype:CFUNCTYPE, func_args:list):
