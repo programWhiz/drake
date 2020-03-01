@@ -3,9 +3,12 @@ from multimethod import overload
 import llvmlite.ir as ll
 from src.exceptions import *
 from src.llvm_ast import next_id, INTRINSIC_FUNC_NAMES
+from multi_key_dict import multi_key_dict
+
+from src.warnings import Warnings
 
 
-def make_empty_scope(ll_mod, hl_module):
+def make_empty_context(ll_mod, hl_module):
     return { 'll_mod': ll_mod, 'hl_mod': hl_module, 'scope': [] }
 
 
@@ -19,9 +22,9 @@ def make_empty_module(hl_module):
 
 def compile_hl_ast(module, is_main=False):
     ll_mod = make_empty_module(module)
-    scope = make_empty_scope(ll_mod, module)
+    ctx = make_empty_context(ll_mod, module)
 
-    init_func = add_module_init_func(module, ll_mod, scope)
+    init_func = add_module_init_func(module, ll_mod, ctx)
 
     if is_main:
         push_module_main(ll_mod, init_func)
@@ -29,14 +32,14 @@ def compile_hl_ast(module, is_main=False):
     return ll_mod
 
 
-def add_module_init_func(module, ll_mod, scope):
-    init_func = push_scope(scope, f"{module['name']}.$init")
-    push_module_idempotency_instr(scope)
+def add_module_init_func(module, ll_mod, ctx):
+    init_func = push_scope(ctx, f"{module['name']}.$init")
+    push_module_idempotency_instr(ctx)
 
     for instr in module['instrs']:
-        compile_hl_instr(instr, scope)
+        compile_hl_instr(instr, ctx)
 
-    push_instr(scope, { 'op': 'ret_void' })
+    push_instr(ctx, { 'op': 'ret_void' })
 
     # add the init func to the module
     init_func = {
@@ -69,12 +72,12 @@ def push_module_main(ll_mod, init_func):
     })
 
 
-def push_module_idempotency_instr(scope):
+def push_module_idempotency_instr(ctx):
     i1 = ll.IntType(8)
     zero, one = ll.Constant(i1, 0), ll.Constant(i1, 1)
 
     # declare global is_module_init = False
-    global_instr = push_instr(scope, {
+    global_instr = push_instr(ctx, {
         'op': 'global_var',
         'align': 1,
         'name': '$module.is_init',
@@ -88,7 +91,7 @@ def push_module_idempotency_instr(scope):
     #   return
     # else:
     #   is_module_init = true
-    push_instr(scope, {
+    push_instr(ctx, {
         'op': 'if',
         'cond': {
             'op': 'trunc', 'type': ll.IntType(1), 'value': { 'op': 'load', 'ref': ref },
@@ -102,39 +105,62 @@ def push_module_idempotency_instr(scope):
     })
 
 
-def push_scope(scope, new_scope_name:str, is_global:bool=False):
-    s = { "name": new_scope_name, "instrs": [], "is_global": is_global }
+def push_scope(ctx, new_scope_name:str, is_global:bool=False):
+    s = {
+        "name": new_scope_name,
+        "instrs": [],
+        "is_global": is_global,
+        "local_vars": multi_key_dict()
+    }
     # if this is top level scope, then its a global scope
-    scope['scope'].append(s)
+    ctx['scope'].append(s)
     return s
 
 
-def push_instr(scope, instr):
+def get_cur_scope(ctx):
+    return ctx['scope'][-1]
+
+
+def iter_scopes_up(ctx, skip_up=0):
+    """Iterate up the scope stack, skip up a certain number of scopes when starting.
+    This can be useful for looking far variables or functions defined up the stack chain,
+    and `skip_up` can be used to skip current and immediate parent scope."""
+    scopes = ctx['scope']
+    if skip_up >= len(scopes):
+        yield from []
+    if skip_up > 0:
+        scopes = scopes[:-skip_up]
+
+    yield from reversed(scopes)
+
+
+def push_instr(ctx, instr):
     if not instr.get('id'):
         instr['id'] = next_id()
-    scope['scope'][-1]['instrs'].append(instr)
+    get_cur_scope(ctx)['instrs'].append(instr)
     return instr
 
 
-def pop_scope(scope):
-    if len(scope['scope']) == 0:
+def pop_scope(ctx):
+    if len(ctx['scope']) == 0:
         raise BuildException("Attempt to pop empty scope stack.")
 
-    return scope['scope'].pop()
+    return ctx['scope'].pop()
 
 
 @overload
-def compile_hl_instr(ast, scope):
-    print("[ERROR] unsupported ast node:", ast, file=sys.stderr)
-    raise Exception("Unsupported ast node " + ast.get('op'))
+def compile_hl_instr(ast, ctx):
+    ast_op = ast.get('op')
+    print(f"[ERROR] unsupported ast node '{ast_op}': ", ast, file=sys.stderr)
+    raise Exception(f"Unsupported ast node '{ast_op}'")
 
 
 def is_op(op_name):
     return lambda ast: isinstance(ast, dict) and ast.get('op') == op_name
 
 
-def get_local_instr_list(scope):
-    local = scope['local_scope']
+def get_local_instr_list(ctx):
+    local = ctx['local_scope']
     while local:
         if 'instrs' in local:
             return local['instrs']
@@ -143,25 +169,66 @@ def get_local_instr_list(scope):
 
 
 @overload
-def compile_hl_instr(ast:is_op('printf'), scope):
-    args = [ compile_hl_instr(arg, scope) for arg in ast['args'] ]
-    return push_instr(scope, { 'op': 'call', 'intrinsic': 'printf', 'args': args })
+def compile_hl_instr(ast:is_op('printf'), ctx):
+    args = [ compile_hl_instr(arg, ctx) for arg in ast['args'] ]
+    return push_instr(ctx, { 'op': 'call', 'intrinsic': 'printf', 'args': args })
 
 
 @overload
-def compile_hl_instr(ast:is_op('add'), scope):
-    left = compile_hl_ast(ast['left'], scope)
-    right = compile_hl_ast(ast['right'], scope)
+def compile_hl_instr(ast:is_op('declare_local'), ctx):
+    var_name, var_id = ast['name'], ast['id']
+    local_vars = get_cur_scope(ctx)['local_vars']
 
-    left_type = get_instr_type(ast['left'], left, scope)
-    right_type = get_instr_type(ast['right'], right, scope)
+    if var_name in local_vars or var_id in local_vars:
+        Warnings.emit(Warnings.duplicate_var, f"Local variable {var_name} has already been declared.")
+        return  # don't overwrite current variable info
 
-    if is_numeric(left_type) and is_numeric(right_type):
-        out_type = get_min_numeric_precision(left_type, right_type)
+    for parent_scope in iter_scopes_up(ctx, skip_up=1):
+        parent_locals = parent_scope['local_vars']
+        if var_name in parent_locals or var_id in parent_locals:
+            Warnings.emit(Warnings.shadow_var, f"Local variable {var_name} shadows variable from parent scope.")
+            break  # One warning per variable
 
-    return {
-        'type': out_type,
-    }
+    local_vars[var_name] = ast
+    local_vars[var_id] = ast
+
+
+def lookup_var(ast, ctx):
+    var_name, var_id = ast.get('name'), ast.get('id')
+    local_vars = get_cur_scope()['local_vars']
+
+    if var_id and var_id in local_vars:
+        return local_vars[var_id]
+
+    if var_name and var_name in local_vars:
+        return local_vars[var_name]
+
+    return None
+
+
+@overload
+def compile_hl_instr(ast:is_op('get_var'), ctx):
+    """
+    { op: get_var, name: str, [id: str, must_exist: bool] }
+    :param ast:
+        + op: "get_var"
+        + name: str lookup local with this name
+        + id: str lookup local with this id
+        + must_exist: bool, default True, the local must be defined
+    :param ctx: dict, current context of code
+    :return: None
+    """
+    var = lookup_var(ast, ctx)
+
+    if var is None and ast.get('must_exist', True):
+        print("[ERROR] Undefined variable from ast node: ", ast, file=sys.stderr)
+        raise UndefinedVariableError()
+
+    return var
+
+
+def is_symbol(ast):
+    return all(k in ast for k in ('name', 'id', 'type'))
 
 
 def is_literal_instr(instr):
@@ -177,29 +244,35 @@ def is_str_literal_instr(instr):
 
 
 @overload
-def compile_hl_instr(ast:is_str_literal_instr, scope):
+def compile_hl_instr(ast:is_str_literal_instr, ctx):
     return { 'op': 'const_str', 'value': ast['value'] }
 
 
 @overload
-def compile_hl_instr(ast:is_numeric_instr, scope):
+def compile_hl_instr(ast:is_numeric_instr, ctx):
     subtype = ast['subtype']
     precision = ast['precision']
+    dtype = None
 
     if subtype == 'int':
-        return ll.IntType(precision)
+        dtype = ll.IntType(precision)
     elif subtype == 'float':
         if precision == 16:
-            return ll.HalfType()
+            dtype = ll.HalfType()
         elif precision == 32:
-            return ll.FloatType()
+            dtype = ll.FloatType()
         elif precision == 64:
-            return ll.DoubleType()
+            dtype = ll.DoubleType()
     elif subtype == 'bool':
-        return ll.IntType(1)
-    else:
+        dtype = ll.IntType(1)
+
+    if dtype is None:
         print(f"[ERROR] Unhandled numeric literal type:", ast)
         raise BuildException("Unhandled numeric type: " + ast['subtype'])
+
+    instr = { "op": "const_val", "type": dtype, "value": ll.Constant(dtype, ast['value']) }
+
+    return instr
 
 
 def make_int(value, precision=32):
