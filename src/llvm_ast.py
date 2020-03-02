@@ -179,7 +179,7 @@ def compile_instruction_ir(bb, instr: is_op("alloca"), scope: dict):
     ref_type = instr.get('type', ref.get('type'))
     ref_type = get_alloc_type(ref_type, scope)
     count = get_alloc_count(bb, instr, scope) or 1
-    ptr = bb.alloca(ref_type, name=ref["name"], size=count)
+    ptr = bb.alloca(ref_type, name=ref.get("name"), size=count)
     scope['ptrs'][ref['id']] = ptr
     return ptr
 
@@ -358,12 +358,13 @@ def compile_instruction_ir(bb, instr: is_op("const_str"), scope: dict):
 def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
     cond = compile_instruction_ir(bb, instr['cond'], scope)
     tblock = bb.append_basic_block()
-    exit_blk = bb.append_basic_block()
+    exit_blk = None
 
     false_instrs = instr.get('false')
     if false_instrs:
         fblock = bb.append_basic_block()
     else:
+        exit_blk = bb.append_basic_block()
         fblock = exit_blk
 
     bb.cbranch(cond, tblock, fblock)
@@ -373,6 +374,8 @@ def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
         compile_instruction_ir(bb, true_instr, scope)
     # true block may terminate with return / jump from another instrunction
     if not tblock.is_terminated:
+        if exit_blk is None:
+            exit_blk = bb.append_basic_block()
         bb.branch(exit_blk)
 
     if false_instrs:
@@ -381,9 +384,12 @@ def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
             compile_instruction_ir(bb, false_instr, scope)
         # false block may terminate with return / jump from another instrunction
         if not fblock.is_terminated:
+            if exit_blk is None:
+                exit_blk = bb.append_basic_block()
             bb.branch(exit_blk)
 
-    bb.position_at_end(exit_blk)
+    if exit_blk:
+        bb.position_at_end(exit_blk)
 
 
 @overload
