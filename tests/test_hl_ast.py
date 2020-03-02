@@ -7,12 +7,12 @@ from src.llvm_utils import compile_module_llvm, create_binary_executable, run_cl
 import pytest
 
 
-def get_test_stdout(module_ast):
+def get_test_stdout(root_node):
     obj_file, exe_file = None, None
     module_path = tempfile.mktemp(dir="/tmp", prefix="drake_test_module", suffix=".ll")
 
     try:
-        ll_ast = compile_hl_ast(module_ast, is_main=True)
+        ll_ast = root_node.to_ll_ast()
         print("\nLLVM AST:\n", ll_ast)
 
         ll_module = compile_module_ir(ll_ast)
@@ -42,6 +42,30 @@ def test_print():
 
     result = get_test_stdout(module)
     assert result == "Hello world 世界!"
+
+
+def test_bind_on_assign():
+    module = {
+        "name": "test_module",
+        "instrs": [
+            { "op": "declare_local", "name": "x", "type": None, "id": next_id() },
+            {
+                "op": "assign",
+                "left": { "op": "get_var", "name": "x" },
+                "right": make_int(42)
+            },
+            {
+                "op": "printf",
+                "args": [
+                    make_str("%d"),
+                    { "op": "as_arg", "ref": { "op": "get_var", "name": "x" } }
+                ]
+            }
+        ]
+    }
+
+    result = get_test_stdout(module)
+    assert result == 42
 
 
 def test_print_int():
@@ -97,26 +121,6 @@ def test_var_bind_fail_add():
     compile_hl_ast(module)
 
 
-def test_var_bind_fail_add():
-    x = { "op": "var", "name": "x", "type": None, "id": next_id() }
-    y = { "op": "var", "name": "y", "type": None, "id": next_id() }
-
-    # var x, y
-    # x + y
-    module = {
-        "name": "test_module",
-        "instrs": [
-            x, y,
-            { "op": "add", "left": x, "right": y }
-        ]
-    }
-
-    try:
-        compile_hl_ast(module)
-    except UnknownTypeError:
-        pass
-
-
 def test_var_bind_add():
     x = { "op": "var", "name": "x", "type": make_int(3), "id": next_id() }
     y = { "op": "var", "name": "y", "type": make_int(5), "id": next_id() }
@@ -139,30 +143,6 @@ def test_var_bind_add():
 
     result = get_test_stdout(module)
     assert result == 8
-
-
-def test_bind_on_assign():
-    module = {
-        "name": "test_module",
-        "instrs": [
-            { "op": "var", "name": "x", "type": None, "id": next_id() },
-            {
-              "op": "assign",
-              "left": { "op": "get_var", "name": "x" },
-              "right": make_int(42)
-            },
-            {
-              "op": "printf",
-              "args": [
-                  make_str("%d"),
-                  { "op": "get_var", "name": "x" }
-              ]
-            }
-        ]
-    }
-
-    result = get_test_stdout(module)
-    assert result == 42
 
 
 def test_duplicate_var_name():
@@ -206,3 +186,38 @@ def test_duplicate_var_id():
         assert False, 'Expected duplicate variable id to throw'
     except BuildException:
         pass
+
+
+def test_node_replace_empty():
+    n1, n2 = Node(), Node()
+    n3 = Node(children=[ n1, n2 ])
+    n3.replace_child(n2, [])
+    assert n3.children == [ n1 ]
+
+
+def test_node_replace_single():
+    n1, n2 = Node(), Node()
+    n3 = Node(children=[ n1, n2 ])
+    n4 = Node()
+    n3.replace_child(n2, [ n4 ])
+    assert n3.children == [ n1, n4 ]
+
+
+def test_node_replace_multi():
+    n1, n2, n3, n4 = Node(), Node(), Node(), Node()
+    n5 = Node(children=[ n1, n2 ])
+    n5.replace_child(n2, [ n3, n4 ])
+    assert n5.children == [ n1, n3, n4 ]
+    n5.replace_child(n1, [ n3, n2 ])
+    assert n5.children == [ n3, n2, n3, n4 ]
+
+
+def test_printf():
+    number = Literal(14, type=NumericType(is_int=True, precision=32))
+
+    module = Module(is_main=True, name='_main_', children=[
+        Printf(children=[ StrLiteral("%d"), number ])
+    ])
+
+    result = get_test_stdout(module)
+    assert result == "14"
