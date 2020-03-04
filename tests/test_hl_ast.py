@@ -221,3 +221,17 @@ def test_printf():
 
     result = get_test_stdout(module)
     assert result == "14"
+
+
+def test_assign():
+    number = Literal(14, type=NumericType(is_int=True, precision=32))
+    decl_x = DefVar(name='x')
+    ass_x = Assign(children=[ BareName('x'), number ])
+
+    module = Module(is_main=True, name='_main_', children=[
+        decl_x, ass_x,
+        Printf(children=[ StrLiteral("%d"), BareName('x') ])
+    ])
+
+    result = get_test_stdout(module)
+    assert result == "14"

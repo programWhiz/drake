@@ -420,12 +420,38 @@ class Type:
     def ll_type(self):
         raise NotImplementedError()
 
+    def is_primitive(self):
+        return False
+
+    def equivalent(self, other):
+        return other == self
+
+    def to_tuple(self):
+        return tuple()
+
+
 class NumericType(Type):
-    def __init__(self, is_int:bool=True, precision:int=32, is_bool:int=False, **kwargs):
+    def __init__(self,
+                 is_int:bool=True,
+                 precision:int=32,
+                 is_bool:int=False,
+                 strict_subtype:bool=False,
+                 strict_precision:bool=False,
+                 **kwargs):
         super().__init__(**kwargs)
         self.is_int = is_int
         self.is_bool = is_bool
         self.precision = precision
+        self.strict_subtype = strict_subtype
+        self.strict_precision = strict_precision
+
+    def equivalent(self, other):
+        return self.is_int == other.is_int and \
+            self.is_bool == other.is_bool and \
+            self.precision == other.precision
+
+    def to_tuple(self):
+        return (NumericType, self.is_int, self.is_bool, self.precision)
 
     def ll_type(self):
         if self.is_int:
@@ -440,6 +466,24 @@ class NumericType(Type):
         elif self.precision >= 16:
             return ll.HalfType()
 
+    def is_primitive(self):
+        return True
+
+
+class UnionType(Type):
+    def __init__(self, types, **kwargs):
+        super().__init__(**kwargs)
+        self.types = types
+
+    def equivalent(self, other):
+        if not isinstance(other, UnionType):
+            return False
+        return other.to_tuple() == self.to_tuple()
+
+    def to_tuple(self):
+        return tuple(sorted(t.to_tuple() for t in self.types))
+
+
 class Node:
     def __init__(self, parent=None, children=None, type:Type=None):
         self.parent:"Node" = parent
@@ -447,9 +491,13 @@ class Node:
         for child in self.children:
             child.parent = self
         self.is_built = False
-        self.global_symbols:Dict[str, Node] = {}
-        self.local_symbols:Dict[str, Node] = {}
         self.type:Type = type
+
+    def get_locals(self):
+        return self.parent.get_locals() if self.parent else None
+
+    def get_globals(self):
+        return self.parent.get_globals() if self.parent else None
 
     def replace_child(self, node, repl_nodes):
         if not repl_nodes:
@@ -470,19 +518,56 @@ class Node:
                 self.children.append(node)
 
     def build(self):
+        if self.is_built:
+            return
+
+        self.before_build()
+
         while not self.is_built:
             self.is_built = True
+            self.before_build_children()
 
-            for child in self.children:
+            for child_idx, child in enumerate(self.children):
+                self.before_build_child(child_idx, child)
                 child.build()
 
             self.build_inner()
 
+        self.after_build()
+
     def build_inner(self):
+        pass
+
+    def before_build(self):
+        pass
+
+    def before_build_children(self):
+        pass
+
+    def before_build_child(self, child_idx, child):
+        pass
+
+    def after_build(self):
         pass
 
     def to_ll_ast(self):
         raise NotImplementedError()
+
+    def is_lvalue(self):
+        if not self.parent:
+            return False
+        return self.parent.is_child_lvalue(self)
+
+    def is_rvalue(self):
+        if not self.parent:
+            return False
+        return self.parent.is_child_rvalue(self)
+
+    def is_child_lvalue(self, child):
+        return False
+
+    def is_child_rvalue(self, child):
+        return True
 
 
 class Literal(Node):
@@ -505,13 +590,72 @@ class StrLiteral(Literal):
         return { 'op': 'const_str', 'value': self.value }
 
 
+class Variable:
+    def __init__(self, name, type=None, nodes=None):
+        self.name = name
+        self.nodes = nodes or []
+        self.ll_id = next_id()
+        self.type = type
+
+    def ll_ref(self):
+        if not self.type:
+            raise UnknownTypeError(f"Variable {self.name} has undefined type.")
+
+        return { "type": self.type.ll_type(), "id": self.ll_id, "name": self.name }
+
+
 class DefVar(Node):
     def __init__(self, name, **kwargs):
         super().__init__(**kwargs)
         self.name = name
 
     def build_inner(self):
-        self.parent.local_symbols[self.name] = self
+        self.var = Variable(self.name, nodes=[self], type=self.type)
+        self.get_locals()[self.name] = self.var
+
+    def to_ll_ast(self):
+        # TODO: handle classes and malloc here based on type
+        return { "op": "alloca", "ref": self.var.ll_ref() }
+
+
+class BareName(Node):
+    def __init__(self, name, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.var:Variable = None
+
+    def build_inner(self):
+        self.var = self.get_locals().get(self.name)
+        if not self.var:
+            raise UndefinedVariableError(f'Undefined symbol {self.name}')
+
+    def to_ll_ast(self):
+        if self.is_rvalue():
+            return { "op": "load", "ref": self.var.ll_ref() }
+        elif self.is_lvalue():
+            return self.var.ll_ref()
+
+
+class BinaryOp(Node):
+    def is_child_lvalue(self, child):
+        return child == self.children[0]
+
+    def is_child_rvalue(self, child):
+        return child == self.children[1]
+
+
+class Assign(BinaryOp):
+    def build_inner(self):
+        left, right = self.children[0:2]
+
+        # TODO: handle non-variable?
+        left.var.type = right.type
+
+    def to_ll_ast(self):
+        left = self.children[0].to_ll_ast()
+        right = self.children[1].to_ll_ast()
+
+        return { 'op': 'store', 'ref': left, 'value': right }
 
 
 class CallIntrinsic(Node):
@@ -530,13 +674,28 @@ class Printf(CallIntrinsic):
         super().__init__(**kwargs)
 
 
-class Module(Node):
+class VarScope(Node):
+    def __init__(self, local_symbols = None, global_symbols = None, **kwargs):
+        super().__init__(**kwargs)
+        self.global_symbols:Dict[str, Node] = local_symbols or dict()
+        self.local_symbols:Dict[str, Node] = global_symbols or dict()
+
+    def get_locals(self):
+        return self.local_symbols
+
+    def get_globals(self):
+        return self.global_symbols
+
+
+class Module(VarScope):
     def __init__(self, name, is_main:bool=False, **kwargs):
         super().__init__(**kwargs)
         self.is_main = is_main
         self.name = name
 
     def to_ll_ast(self):
+        self.build()
+
         instrs = [ child.to_ll_ast() for child in self.children ]
         instrs.append({ 'op': 'ret_void' })
 
@@ -620,3 +779,22 @@ def module_init_func_ll_ast(module_name, entry_func_id):
         "id": next_id(),
         "instrs": [global_instr, if_cond],
     }
+
+
+def subsume_type(left:Type, right:Type) -> Type:
+    """
+    Return a new type that makes the left type include the right type.
+    :param left: Type source type
+    :param right: Type new type to include
+    :return: Type type that can handle both right and left types
+    """
+    if left is None:
+        return right
+
+    if left.equivalent(right):
+        return left
+
+    if isinstance(left, NumericType) and isinstance(right, NumericType):
+        combo_type = left.get_min_numeric_type(right)
+
+    return UnionType(types=[ left, right ])
