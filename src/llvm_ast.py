@@ -329,18 +329,20 @@ def compile_instruction_ir(bb, instr: is_op("store"), scope: dict):
     return bb.store(value, ptr_id)
 
 
-@overload
-def compile_instruction_ir(bb, instr: is_op("load"), scope: dict):
-    ref = instr['ref']
-
+def get_ref_pointer(bb, instr, scope):
+    ref = instr.get('ref', instr)
     if 'op' in ref:
-        ptr_id = compile_instruction_ir(bb, ref, scope)
+        return compile_instruction_ir(bb, ref, scope)
     elif 'id' in ref:
-        ptr_id = scope['ptrs'][ref['id']]
+        return scope['ptrs'][ref['id']]
     else:
         raise Exception("Expected load.ref to be id or instruction")
 
-    return bb.load(ptr_id)
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("load"), scope: dict):
+    ptr = get_ref_pointer(bb, instr, scope)
+    return bb.load(ptr)
 
 
 @overload
@@ -436,6 +438,12 @@ def compile_instruction_ir(bb, instr: is_op("call"), scope: dict):
 
     args = [ compile_instruction_ir(bb, arg, scope) for arg in instr['args'] ]
     return bb.call(func_ptr, args)
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("cast_ptr"), scope: dict):
+    ptr = get_ref_pointer(bb, instr, scope)
+    return bb.bitcast(ptr, instr['type'])
 
 
 def numeric(is_int=True, bits=32):

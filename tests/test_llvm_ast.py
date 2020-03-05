@@ -832,3 +832,42 @@ def test_call_intrinsic():
     cfunc_type = CFUNCTYPE(c_int32)
 
     run_ir_code(module, "test_func", cfunc_type, [])
+
+
+def test_cast_pointer():
+    ret = { "name": "ret", "id": next_id(), "type": ll.IntType(32) }
+    x_ref = { "type": ll.FloatType(), "name": "x", "id": next_id() }
+
+    test_func = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [],
+        "instrs": [
+            { "op": "alloca", "ref": x_ref },
+            # x = 3.1415
+            { "op": "store", "ref": x_ref, "value": {
+                "op": "const_val", "value": ll.Constant(ll.FloatType(), 3.1415)
+            } },
+            # return *(int*) x
+            {
+                "op": "ret",
+                "value": {
+                    "op": "load",
+                    "ref": { "op": "cast_ptr", "ref": x_ref, "type": ll.PointerType(ll.IntType(32)) }
+                }
+            }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test",
+        "funcs": [ test_func ]
+    })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    out = run_ir_code(module, "test_func", cfunc_type, [])
+    # NOTE: 1078529622 is the int equivalent of 3.1415 in bytes
+    assert out == 1078529622
