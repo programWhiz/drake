@@ -54,6 +54,32 @@ def _test_ir_binary_op_int32(op_name, left_val, right_val, expect):
     assert expect == result
 
 
+def test_cast():
+    a = { "name": "a", "id": next_id(), "type": ll.IntType(32) }
+    ret = { "name": "ret", "id": next_id(), "type": ll.FloatType() }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [ a ],
+        "instrs": [{
+            "op": "ret",
+            "value": {
+                "op": 'sitofp',
+                "value": { "op": "func_arg", "value": 0 },
+                "type": ll.FloatType()
+            }
+        }]
+    }
+
+    module = compile_module_ir({ "name": "test", "funcs": [ func_def ] })
+
+    cfunc_type = CFUNCTYPE(c_float, c_int32)
+    result = run_ir_code(module, "test_func", cfunc_type, [ 32 ])
+    assert math.isclose(32.0, result, abs_tol=0.001)
+
+
 def _test_ir_binary_op_float32(op_name, left_val, right_val, expect):
     float_type = ll.FloatType()
     a = { "name": "a", "id": next_id(), "type": float_type }

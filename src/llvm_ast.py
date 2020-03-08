@@ -115,13 +115,17 @@ llvm_zero_ops = { 'ret_void' }
 
 llvm_one_ops = { 'ret', 'not_', 'neg' }
 
+llvm_cast_ops = { 'sext', 'zext', 'trunc', 'fpext', 'fptrunc', 'fptosi', 'fptoui', 'sitofp', 'uitofp' }
+
 def is_in_op_set(x, instr_set):
     return isinstance(x, dict) and x.get('op') in instr_set
+
 
 is_binary_op = lambda x: is_in_op_set(x, llvm_binary_ops)
 is_zero_op = lambda x: is_in_op_set(x, llvm_zero_ops)
 is_single_op = lambda x: is_in_op_set(x, llvm_one_ops)
 is_comparison = lambda x: is_in_op_set(x, llvm_comparison)
+is_cast = lambda x: is_in_op_set(x, llvm_cast_ops)
 
 
 def is_op(op_name):
@@ -155,6 +159,13 @@ def compile_instruction_ir(bb, instr: is_comparison, scope: dict):
         return bb.icmp_signed(cmp, left, right)
     elif data_type == 'u':
         return bb.icmp_unsigned(cmp, left, right)
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_cast, scope: dict):
+    value = compile_instruction_ir(bb, instr["value"], scope)
+    cast_op = getattr(bb, instr['op'])
+    return cast_op(value, instr['type'])
 
 
 @overload
