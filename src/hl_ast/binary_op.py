@@ -26,8 +26,6 @@ class Assign(BinaryOp):
             left.var = existing
 
         # TODO: actually figure out assign in condition
-        conditional = False
-
         ltype = left.var.type
         rtype = right.type
 
@@ -38,7 +36,7 @@ class Assign(BinaryOp):
 
         # with unconditional assignment, if the left type isn't fixed, we
         # can just create a new reference of the desired type
-        elif not conditional and not left.var.fixed_type:
+        elif not left.var.fixed_type:
             # Implicitly declare a new variable replacing the old one
             left = DefVar(left.var.name, implicit=True, type=rtype, parent=self)
             self.set_rebuild()
@@ -51,14 +49,6 @@ class Assign(BinaryOp):
             elif rtype.can_cast_to(ltype):
                 cast_op = rtype.get_cast_op(ltype)
                 right = CastType(type=ltype, children=[right], cast_op=cast_op)
-            # Can't subsume/cast, must make union of types
-            elif conditional:
-                ltype = UnionType.make_union(ltype, rtype)
-                left.var.type = ltype
-                # Left command is now "pointer to union item"
-                left = GetUnionPointer(type=ltype, children=[ left ])
-                # Right command is now "cast to union"
-                right = SubsumeType(type=ltype, children=[ right ])
 
             self.set_rebuild()
             self.type = ltype

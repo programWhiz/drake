@@ -18,6 +18,8 @@ class FuncDef(VarScope):
         super().__init__(**kwargs)
         self.name = name
         self.func_args:List[FuncDefArg] = func_args or []
+        for i, arg in enumerate(self.func_args):
+            arg.index = i
         self.return_nodes = []
 
     def before_build(self):
@@ -54,3 +56,8 @@ class InvokeFunc:
         self.func_def = func_def
         self.func_bind = func_bind
         self.ret_type = ret_type
+
+
+class Invoke(Node):
+    """Generic invocation of an object / function in drake."""
+    pass

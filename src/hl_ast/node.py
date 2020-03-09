@@ -21,13 +21,19 @@ class Node:
         if not repl_nodes:
             return self.remove(node)
 
+        if isinstance(repl_nodes, Node):
+            repl_nodes = [ repl_nodes ]
+
         index_of = self.children.index(node)
         self.children[index_of:index_of+1] = repl_nodes
         for node in repl_nodes:
             node.parent = self
 
+        self.set_rebuild()
+
     def remove(self, node):
         self.children.remove(node)
+        self.set_rebuild()
 
     def add(self, *nodes):
         if nodes:

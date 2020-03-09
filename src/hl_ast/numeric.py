@@ -3,13 +3,16 @@ from .type import Type
 
 
 class NumericType(Type):
+    __slots__ = ['is_int', 'signed_int', 'is_bool',
+                 'precision', 'strict_subtype', 'strict_precision']
+
     def __init__(self,
-                 is_int:bool=True,
-                 signed_int:bool=True,
-                 precision:int=32,
-                 is_bool:int=False,
-                 strict_subtype:bool=False,
-                 strict_precision:bool=False,
+                 is_int: bool = True,
+                 signed_int: bool = True,
+                 precision: int = 32,
+                 is_bool: int = False,
+                 strict_subtype: bool = False,
+                 strict_precision: bool = False,
                  **kwargs):
         super().__init__(**kwargs)
         self.is_int = is_int
@@ -18,6 +21,18 @@ class NumericType(Type):
         self.precision = precision
         self.strict_subtype = strict_subtype
         self.strict_precision = strict_precision
+
+    def with_props(self, **props):
+        return NumericType(
+            is_int=props.get('is_int', self.is_int),
+            signed_int=props.get('signed_int', self.signed_int),
+            is_bool=props.get('is_bool', self.is_bool),
+            precision=props.get('precision', self.precision),
+            strict_subtype=props.get('strict_subtype', self.strict_subtype),
+            strict_precision=props.get('strict_precision', self.strict_precision))
+
+    def with_precision(self, p):
+        return self.with_props(precision=p)
 
     def equivalent(self, other):
         if not isinstance(other, NumericType):
