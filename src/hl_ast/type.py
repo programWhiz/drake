@@ -1,8 +1,17 @@
+import llvmlite.ir as ll
+
+
 class Type:
     def __init__(self):
         pass
 
     def ll_type(self):
+        raise NotImplementedError()
+
+    def shortname(self) -> str:
+        raise NotImplementedError()
+
+    def longname(self) -> str:
         raise NotImplementedError()
 
     def is_primitive(self):
@@ -12,7 +21,7 @@ class Type:
         return other == self
 
     def subsumes(self, other):
-        return self.equivalent(other)
+        return other is None or self.equivalent(other)
 
     def to_tuple(self):
         return tuple()
@@ -24,3 +33,21 @@ class Type:
         return None
 
 
+class VoidType(Type):
+    def ll_type(self):
+        return ll.VoidType()
+
+    def is_primitive(self):
+        return True
+
+    def equivalent(self, other):
+        return isinstance(other, VoidType)
+
+    def to_tuple(self):
+        return (VoidType,)
+
+    def shortname(self) -> str:
+        return 'v'
+
+    def longname(self) -> str:
+        return 'void'

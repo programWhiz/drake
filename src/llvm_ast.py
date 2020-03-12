@@ -368,6 +368,11 @@ def compile_instruction_ir(bb, instr: is_op("const_str"), scope: dict):
 
 
 @overload
+def compile_instruction_ir(bb, instr: is_op("pass"), scope: dict):
+    return
+
+
+@overload
 def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
     cond = compile_instruction_ir(bb, instr['cond'], scope)
     tblock = bb.append_basic_block()

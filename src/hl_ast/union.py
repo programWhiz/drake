@@ -14,11 +14,17 @@ class UnionType(Type):
         if t1 is None or t2 is None:
             return t1 or t2
 
+        if t1.equivalent(t2):
+            return t1
+
         t1_types = set(t1.types) if isinstance(t1, UnionType) else { t1 }
         t2_types = set(t2.types) if isinstance(t2, UnionType) else { t2 }
 
         types = list(t1_types | t2_types)
         types.sort()
+
+        if len(types) == 1:
+            return next(iter(types))
 
         return UnionType(types=types)
 
@@ -52,11 +58,21 @@ class UnionType(Type):
 
         return type_index
 
+    def shortname(self):
+        x = ','.join(t.shortname() for t in self.types)
+        return f'[{x}]'
+
+    def longname(self):
+        x = ','.join(t.longname() for t in self.types)
+        return f'[{x}]'
+
 
 class GetUnionPointer(Node):
-    def __init__(self, **kwargs):
+    clone_attrs = [ 'gep_index' ]
+
+    def __init__(self, gep_index:int = None, **kwargs):
         super().__init__(**kwargs)
-        self.gep_index = None
+        self.gep_index = gep_index
 
     def build_inner(self):
         var = self.children[0]

@@ -11,6 +11,12 @@ class Module(VarScope):
     def to_ll_ast(self):
         self.build()
 
+        # Provide a place for child elements to write functions
+        # at the module level
+        self.ll_funcs = []
+
+        super().to_ll_ast()
+
         instrs = [ child.to_ll_ast() for child in self.children ]
         instrs.append({ 'op': 'ret_void' })
 
@@ -22,15 +28,17 @@ class Module(VarScope):
             "id": next_id(),
             "instrs": instrs
         }
+
         # Call inner func from an "if module init" check initialize function
         init_func = module_init_func_ll_ast(self.name, init_func_inner['id'])
-        funcs = [ init_func_inner, init_func ]
+        self.ll_funcs += [ init_func_inner, init_func ]
 
         # Call init from main method if this module is main
         if self.is_main:
-            funcs.append(main_method_ll_ast(init_func['id']))
+            self.ll_funcs.append(main_method_ll_ast(init_func['id']))
 
-        return { "name": self.name, "instrs": instrs, "funcs": funcs, "classes": [] }
+
+        return { "name": self.name, "instrs": instrs, "funcs": self.ll_funcs, "classes": [] }
 
 
 def main_method_ll_ast(entry_func_id):

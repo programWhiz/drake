@@ -3,6 +3,8 @@ import llvmlite.ir as ll
 
 
 class Literal(Node):
+    clone_attrs = [ 'value' ]
+
     def __init__(self, value=None, **kwargs):
         super().__init__(**kwargs)
         self.value = value

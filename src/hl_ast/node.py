@@ -3,6 +3,8 @@ from .type import Type
 
 
 class Node:
+    clone_attrs = [ 'type' ]
+
     def __init__(self, parent=None, children=None, type:Type=None):
         self.parent:"Node" = parent
         self.children:List["Node"] = children or []
@@ -16,6 +18,22 @@ class Node:
 
     def get_globals(self):
         return self.get_enclosing_scope().get_globals()
+
+    def clone(self):
+        cls = self.__class__
+        clone_attrs = set(cls.clone_attrs)
+        for sup_cls in cls.mro():
+            clone_attrs |= set(getattr(sup_cls, 'clone_attrs', set()))
+
+        kwargs = { attr: getattr(self, attr) for attr in clone_attrs }
+        inst = cls(**kwargs)
+
+        for child in self.children:
+            clone = child.clone()
+            clone.parent = inst
+            inst.children.append(clone)
+
+        return inst
 
     def replace_child(self, node, repl_nodes):
         if not repl_nodes:
@@ -96,25 +114,27 @@ class Node:
     def is_child_rvalue(self, child):
         return True
 
-    def find_type_up(self, node_type):
+    def find_type_up(self, node_type, search_self=False):
+        if search_self and isinstance(self, node_type):
+            return self
         if not self.parent:
             return None
         if isinstance(self.parent, node_type):
             return self.parent
-        return self.parent.find_type_up(node_type)
+        return self.parent.find_type_up(node_type, search_self)
 
-    def get_enclosing_module(self) -> "Module":
+    def get_enclosing_module(self, search_self=False) -> "Module":
         from .module import Module
-        return self.find_type_up(Module)
+        return self.find_type_up(Module, search_self)
 
-    def get_enclosing_func(self) -> "FuncDef":
-        from .func import FuncDef
-        return self.find_type_up(FuncDef)
+    def get_enclosing_func(self, search_self=False) -> "FuncDef":
+        from .func_def import FuncDef
+        return self.find_type_up(FuncDef, search_self)
 
-    def get_enclosing_class(self) -> "ClassDef":
+    def get_enclosing_class(self, search_self=False) -> "ClassDef":
         from .class_def import ClassDef
-        return self.find_type_up(ClassDef)
+        return self.find_type_up(ClassDef, search_self)
 
-    def get_enclosing_scope(self) -> "VarScope":
+    def get_enclosing_scope(self, search_self=False) -> "VarScope":
         from .var_scope import VarScope
-        return self.find_type_up(VarScope)
+        return self.find_type_up(VarScope, search_self)

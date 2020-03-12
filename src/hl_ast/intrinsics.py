@@ -6,6 +6,8 @@ from .literal import StrLiteral
 
 
 class CallIntrinsic(Node):
+    clone_attrs = [ 'intrinsic' ]
+
     def __init__(self, intrinsic:str=None, **kwargs):
         super().__init__(**kwargs)
         self.intrinsic = intrinsic

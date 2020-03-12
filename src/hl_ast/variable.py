@@ -6,8 +6,11 @@ from .union import UnionType
 
 
 class Variable:
+    clone_attrs = [ 'name', 'value', 'fixed_type' ]
+
     def __init__(self, name, value=None, type=None, fixed_type:bool=False):
         self.name = name
+        self.value = value
         self.ll_id = next_id()
         self.type = type
         # Can we change the type, or is it user specified / fixed?
@@ -21,6 +24,8 @@ class Variable:
 
 
 class DefVar(Node):
+    clone_attrs = [ 'name', 'implicit' ]
+
     def __init__(self, name, implicit:bool=False, **kwargs):
         super().__init__(**kwargs)
         self.name = name
@@ -44,6 +49,8 @@ class DefVar(Node):
 
 
 class BareName(Node):
+    clone_attrs = [ 'name' ]
+
     def __init__(self, name, **kwargs):
         super().__init__(**kwargs)
         self.name = name
@@ -54,8 +61,32 @@ class BareName(Node):
         if not self.var:
             raise UndefinedVariableError(f'Undefined symbol {self.name}')
 
+        # If variable is function param, ast can refer directly to function param
+        if isinstance(self.var, FuncParamVariable):
+            self.parent.replace_child(self, self.var)
+
     def to_ll_ast(self):
         if self.is_rvalue():
             return { "op": "load", "ref": self.var.ll_ref() }
         elif self.is_lvalue():
             return self.var.ll_ref()
+
+
+class FuncParamVariable(Node):
+    def __init__(self, func_arg=None, **kwargs):
+        super().__init__(**kwargs)
+        self.func_arg = func_arg
+        if func_arg:
+            self.type = func_arg.dtype
+
+    @property
+    def name(self):
+        return self.func_arg.name
+
+    def clone(self):
+        clone = super().clone()
+        clone.func_arg = self.func_arg.clone()
+        return clone
+
+    def to_ll_ast(self):
+        return { "op": "func_arg", "value": self.func_arg.index }

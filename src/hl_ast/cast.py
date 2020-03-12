@@ -6,6 +6,8 @@ class SubsumeType(Node):
 
 
 class CastType(Node):
+    clone_attrs = [ 'cast_op' ]
+
     def __init__(self, cast_op=None, **kwargs):
         super().__init__(**kwargs)
         self.cast_op = cast_op
