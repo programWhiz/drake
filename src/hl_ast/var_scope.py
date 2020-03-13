@@ -83,7 +83,13 @@ class VarScope(Node):
 
         from .func_def import FuncInst
         module = self.get_enclosing_module(search_self=True)
-        func_inst = FuncInst(name=key, func_def=func_def, func_bind=func_bind, module=module)
+        func_inst = FuncInst(name=key, func_def=func_def, func_bind=func_bind, parent=module)
         # Cache so there is only one instance of the function with this signature
         self.funcs[key] = func_inst
         return func_inst
+
+    def get_class_inst(self, class_def, field_binds):
+        key = func_bind.get_type_name()
+        key = f'{self.name}.{key}'
+        if key in self.funcs:
+            return self.funcs[key]

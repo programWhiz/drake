@@ -2,8 +2,8 @@ import llvmlite.ir as ll
 
 
 class Type:
-    def __init__(self):
-        pass
+    def __init__(self, is_fixed:bool=False):
+        self.is_fixed = is_fixed
 
     def ll_type(self):
         raise NotImplementedError()

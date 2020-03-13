@@ -27,6 +27,7 @@ class Print(Node):
     def build_inner(self):
         fmts = [ self.get_format_str(child) for child in self.children ]
         self.fmt_str = ' '.join(fmts)
+        self.fmt_str += '\n'
 
     def after_build(self):
         self.parent.replace_child(self, Printf(children=[

@@ -9,6 +9,9 @@ from .union import UnionType
 import llvmlite.ir as ll
 from src.exceptions import *
 from ..llvm_ast import next_id
+from .binding import BindInst
+from src.exceptions import *
+from .cast import CastType, SubsumeType
 
 
 class FuncType(Type):
@@ -122,8 +125,22 @@ class FuncDef(VarScope):
     def after_build(self):
         # Don't declare variable to module scope if this is instantiation,
         # only declare during template discovery phase
-        if not self.build_as_instance:
-            self.get_enclosing_scope().put_scoped_var(self)
+        if self.build_as_instance:
+            return
+
+        scope = self.get_enclosing_scope()
+        existing = scope.get_scoped_var(self.name)
+        if not existing:
+            scope.put_scoped_var(self)
+
+        elif isinstance(existing, FuncDef):
+            overload = FuncOverload(name=self.name)
+            overload.add_overload(existing)
+            overload.add_overload(self)
+            scope.put_scoped_var(overload)
+
+        elif isinstance(existing, FuncOverload):
+            existing.add_overload(self)
 
     def solve_ret_type(self):
         assert self.return_nodes
@@ -157,6 +174,8 @@ class FuncDef(VarScope):
         bind_args.sort(key=lambda arg: arg.index)
 
         binding = FuncBind(func_def=self, ret_type=self.solve_ret_type(), bind_args=bind_args)
+
+        binding.verify_predictates()
 
         return binding
 
@@ -206,6 +225,7 @@ class FuncBind:
             bind_args = [ arg.clone() for arg in self.bind_args ])
 
     def get_type_name(self):
+        """Return a unique name based on the bound function signature."""
         name = self.func_def.name
         name = f"{name}_{self.ret_type.shortname()}"
         arg_str = '_'.join(arg.invoke_arg.get_type_name() for arg in self.bind_args)
@@ -213,14 +233,37 @@ class FuncBind:
             name = f"{name}_{arg_str}"
         return name
 
+    def verify_predictates(self):
+        """Check to make sure all types and conditional predicates of each parameter
+        match the function signature."""
+        for arg in self.bind_args:
+            ltype = arg.bind_to_arg.dtype
+            arg_val = arg.invoke_arg.value
+            rtype = arg_val.type
+            cast = None
 
-class FuncInst:
-    def __init__(self, name:str, func_def:FuncDef, func_bind:FuncBind, module):
-        # Only keep a copy of the function definition we are free to modify
-        self.name = name
+            if ltype is None or rtype.equivalent(ltype):
+                continue
 
-        self.module = module
+            elif ltype.subsumes(rtype):
+                cast = SubsumeType(type=ltype, children=[ arg_val ], parent=arg_val.parent)
 
+            elif rtype.can_cast_to(ltype):
+                cast_op = rtype.get_cast_op(ltype)
+                cast = CastType(type=ltype, children=[ arg_val ], cast_op=cast_op, parent=arg_val.parent)
+
+            else:
+                raise InvalidOverloadError(f"Parameter {arg.name} of type {ltype} does not overload to type {rtype}")
+
+            if cast is not None:
+                arg.invoke_arg.value = cast
+
+
+class FuncInst(BindInst):
+    def __init__(self, name:str, func_def:FuncDef, func_bind:FuncBind, parent):
+        super().__init__(name=name, parent=parent)
+
+        # Keep a copy of the function definition
         self.func_def = func_def.clone()
         self.func_def.parent = self
         self.func_def.build_as_instance = True
@@ -229,12 +272,11 @@ class FuncInst:
         self.func_ptr_id = next_id()
         self.is_built = False
 
-    def find_type_up(self, type, search_self):
-        from .module import Module
-        if type is Module:
-            return self.module
+    def find_type_up(self, dtype, search_self):
+        if self.parent and dtype is type(self.parent):
+            return self.parent
         else:
-            raise Exception("FuncInst only parented by module scope.")
+            return None
 
     def build(self):
         if not self.is_built:
@@ -257,6 +299,48 @@ class FuncInst:
             "ret": { "type": self.func_bind.ret_type.ll_type() },
             "instrs": [ node.to_ll_ast() for node in self.func_def.children ]
         }
+
+
+class FuncOverload(Node):
+    clone_attrs = [ 'name', 'overloads' ]
+
+    def __init__(self, name=None, overloads=None, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.overloads:List[FuncDef] = overloads or []
+
+    def is_overload_conflict(self, fd1:FuncDef, fd2:FuncDef):
+        if len(fd1.func_args) != len(fd2.func_args):
+            return False
+
+        for arg1, arg2 in zip(fd1.func_args, fd2.func_args):
+            if arg1.dtype != arg2.dtype:
+                return False
+
+        return True
+
+    def add_overload(self, func_def:FuncDef):
+        for func_def2 in self.overloads:
+            if self.is_overload_conflict(func_def, func_def2):
+                raise FuncOverloadConflictError(f"Function {func_def.name} has conflicting overloads.")
+
+        self.overloads.append(func_def)
+
+    def get_matching_overload(self, func_args:OrderedDict):
+        # Bind to the first possible function in the list of overloads
+        for func_def in self.overloads:
+            if len(func_def.func_args) != len(func_args):
+                continue  # can't match this function
+
+            try:
+                binding = func_def.bind_args(func_args)
+            except:
+                continue  # can't bind this function
+
+            if binding is not None:
+                return func_def
+
+        return None
 
 
 class InvokeFunc(Node):
@@ -287,12 +371,24 @@ class Invoke(Node):
         args_dict = self.args_to_dict()
 
         if isinstance(symbol.var, FuncDef):
-            func_def = symbol.var
-            func_bind = func_def.bind_args(args_dict)
-            func_inst = self.get_enclosing_scope().get_func_instance(func_def, func_bind)
-            self.parent.replace_child(self, InvokeFunc(func_inst, func_bind))
+            self.invoke_as_func(symbol.var, args_dict)
 
-    def args_to_dict(self):
+        elif isinstance(symbol.var, FuncOverload):
+            self.invoke_as_overload(symbol.var, args_dict)
+
+    def invoke_as_func(self, func_def:FuncDef, args_dict:OrderedDict):
+        func_bind = func_def.bind_args(args_dict)
+        func_inst = self.get_enclosing_scope().get_func_instance(func_def, func_bind)
+        self.parent.replace_child(self, InvokeFunc(func_inst, func_bind))
+
+    def invoke_as_overload(self, func_ovr:FuncOverload, args_dict:OrderedDict):
+        func_def = func_ovr.get_matching_overload(args_dict)
+        if func_def is None:
+            # TODO: print full attempted arg signature here
+            raise InvalidOverloadError(f"Could not match overload for function {func_ovr.name}")
+        self.invoke_as_func(func_def, args_dict)
+
+    def args_to_dict(self) -> OrderedDict:
         args = self.children[1:]
         arg_dict = OrderedDict()
         for i, arg in enumerate(args):

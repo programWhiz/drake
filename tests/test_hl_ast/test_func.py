@@ -1,7 +1,8 @@
 from src.exceptions import BuildException
 from src.hl_ast import Module, FuncDef, Print, StrLiteral, Invoke, BareName, FuncDefArg, InvokeArg, Literal, \
     NumericType, Printf
-from tests.test_hl_ast.test_base import get_test_stdout
+from .test_base import get_test_stdout
+import re
 
 
 def test_func_no_args():
@@ -166,3 +167,106 @@ def test_func_extra_arg():
         assert False, "Expected BuildException"
     except BuildException:
         pass
+
+
+def test_overload_count():
+    int_value = Literal(value=123, type=NumericType(is_int=True))
+
+    module = Module(is_main=True, name='_main_', children=[
+        FuncDef(name='test_func', func_args=[FuncDefArg('x')], children=[
+            Print(children=[StrLiteral("func1")])
+        ]),
+        FuncDef(name='test_func', func_args=[FuncDefArg('x'), FuncDefArg('y')], children=[
+            Print(children=[StrLiteral("func2")])
+        ]),
+        Invoke(children=[  # test_func(x, y) => "func2"
+            BareName('test_func'),
+            InvokeArg(index=0, value=int_value),
+            InvokeArg(index=1, value=int_value),
+        ]),
+        Invoke(children=[   # test_func(x) => "func1"
+            BareName('test_func'),
+            InvokeArg(index=0, value=int_value),
+        ]),
+    ])
+
+    result = get_test_stdout(module)
+    assert result == "func2\nfunc1"
+
+
+def test_print_float():
+    float_type = NumericType(is_int=False, is_fixed=True, precision=32)
+    float_value = Literal(value=1.23, type=float_type)
+
+    module = Module(is_main=True, name='_main_', children=[
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=float_type)], children=[
+            Print(children=[BareName('x')])
+        ]),
+        Invoke(children=[   # test_func(1.23)
+            BareName('test_func'), InvokeArg(index=0, value=float_value),
+        ]),
+    ])
+
+    result = get_test_stdout(module)
+    assert re.match(r"1.230*", result)
+
+
+def test_implicit_cast_int_arg():
+    int_type = NumericType(is_int=True, is_fixed=True, precision=32)
+    long_type = NumericType(is_int=True, precision=64)
+    long_value = Literal(value=123, type=long_type)
+
+    module = Module(is_main=True, name='_main_', children=[
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=int_type)], children=[
+            Print(children=[BareName('x')])
+        ]),
+        Invoke(children=[   # test_func(1.23)
+            BareName('test_func'), InvokeArg(index=0, value=long_value),
+        ]),
+    ])
+
+    result = get_test_stdout(module)
+    assert result == "123"
+
+
+def test_implicit_cast_float_arg():
+    float_type = NumericType(is_int=False, is_fixed=True, precision=32)
+    double_type = NumericType(is_int=False, precision=64)
+    double_value = Literal(value=1.23, type=double_type)
+
+    module = Module(is_main=True, name='_main_', children=[
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=float_type)], children=[
+            Print(children=[BareName('x')])
+        ]),
+        Invoke(children=[   # test_func(1.23)
+            BareName('test_func'), InvokeArg(index=0, value=double_value),
+        ]),
+    ])
+
+    result = get_test_stdout(module)
+    assert result[0:4] == "1.23"
+
+
+def test_overload_by_type():
+    int_value = Literal(value=123, type=NumericType(is_int=True))
+    float_value = Literal(value=1.23, type=NumericType(is_int=False, precision=32))
+    int_type = NumericType(is_int=True, is_fixed=True)
+    float_type = NumericType(is_int=False, is_fixed=True)
+
+    module = Module(is_main=True, name='_main_', children=[
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=int_type)], children=[
+            Print(children=[BareName('x')])
+        ]),
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=float_type)], children=[
+            Print(children=[BareName('x')])
+        ]),
+        Invoke(children=[  # test_func(123)
+            BareName('test_func'), InvokeArg(index=0, value=int_value),
+        ]),
+        Invoke(children=[   # test_func(1.23)
+            BareName('test_func'), InvokeArg(index=0, value=float_value),
+        ]),
+    ])
+
+    result = get_test_stdout(module)
+    assert re.match("123\n1.230*", result)
