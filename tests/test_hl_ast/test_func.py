@@ -270,3 +270,80 @@ def test_overload_by_type():
 
     result = get_test_stdout(module)
     assert re.match("123\n1.230*", result)
+
+
+def test_overload_by_type():
+    int_value = Literal(value=123, type=NumericType(is_int=True))
+    float_value = Literal(value=1.23, type=NumericType(is_int=False, precision=32))
+    int_type = NumericType(is_int=True, is_fixed=True)
+    float_type = NumericType(is_int=False, is_fixed=True)
+
+    module = Module(is_main=True, name='_main_', children=[
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=int_type)], children=[
+            Print(children=[BareName('x')])
+        ]),
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=float_type)], children=[
+            Print(children=[BareName('x')])
+        ]),
+        Invoke(children=[  # test_func(123)
+            BareName('test_func'), InvokeArg(index=0, value=int_value),
+        ]),
+        Invoke(children=[   # test_func(1.23)
+            BareName('test_func'), InvokeArg(index=0, value=float_value),
+        ]),
+    ])
+
+    result = get_test_stdout(module)
+    assert re.match("123\n1.230*", result)
+
+
+def test_overload_prefer_non_cast():
+    """Test that a function overload will preferentially choose a function that does not require overload."""
+    int8, int16, int32 = ( NumericType(precision=p) for p in (8, 16, 32) )
+
+    module = Module(is_main=True, name='_main_', children=[
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=int32)], children=[
+            Print(children=[StrLiteral(value="int32"), BareName('x')])
+        ]),
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=int16)], children=[
+            Print(children=[StrLiteral(value="int16"), BareName('x')])
+        ]),
+        # Call with int32 value, should choose first overload
+        Invoke(children=[
+            BareName('test_func'), InvokeArg(index=0, value=Literal(value=123, type=int32)),
+        ]),
+        # Call with int16 value, should choose second overload
+        Invoke(children=[
+            BareName('test_func'), InvokeArg(index=0, value=Literal(value=456, type=int16)),
+        ]),
+    ])
+
+    result = get_test_stdout(module)
+    assert result == "int32 123\nint16 456"
+
+
+def test_multiple_overload_cast_fail():
+    """Test that a overloading fails when casting to multiple types could work."""
+
+    int8, int16, int32 = ( NumericType(precision=p) for p in (8, 16, 32) )
+
+    module = Module(is_main=True, name='_main_', children=[
+        # def test_func(int32 x)
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=int32)], children=[
+            Print(children=[StrLiteral(value="int32"), BareName('x')])
+        ]),
+        # def test_func(int16 x)
+        FuncDef(name='test_func', func_args=[FuncDefArg('x', dtype=int16)], children=[
+            Print(children=[StrLiteral(value="int16"), BareName('x')])
+        ]),
+        # Call with int8 value, could choose either func impl
+        Invoke(children=[
+            BareName('test_func'), InvokeArg(index=0, value=Literal(value=123, type=int8)),
+        ]),
+    ])
+
+    try:
+        get_test_stdout(module)
+        assert False, "Expected ambiguous overload to fail."
+    except:
+        pass

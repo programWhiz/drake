@@ -213,16 +213,18 @@ class FuncBindArg:
 
 
 class FuncBind:
-    def __init__(self, func_def:FuncDef, ret_type:Type, bind_args:List[FuncBindArg]):
+    def __init__(self, func_def:FuncDef, ret_type:Type, bind_args:List[FuncBindArg], requires_cast:bool = False):
         self.func_def = func_def
-        self.bind_args = bind_args
+        self.bind_args = [ arg.clone() for arg in bind_args ]
         self.ret_type = ret_type
+        self.requires_cast = requires_cast
 
     def clone(self):
         return FuncBind(
             func_def=self.func_def.clone(),
             ret_type = self.ret_type,
-            bind_args = [ arg.clone() for arg in self.bind_args ])
+            bind_args = [ arg.clone() for arg in self.bind_args ],
+            requires_cast = self.requires_cast)
 
     def get_type_name(self):
         """Return a unique name based on the bound function signature."""
@@ -236,6 +238,9 @@ class FuncBind:
     def verify_predictates(self):
         """Check to make sure all types and conditional predicates of each parameter
         match the function signature."""
+
+        self.requires_cast = False
+
         for arg in self.bind_args:
             ltype = arg.bind_to_arg.dtype
             arg_val = arg.invoke_arg.value
@@ -256,6 +261,7 @@ class FuncBind:
                 raise InvalidOverloadError(f"Parameter {arg.name} of type {ltype} does not overload to type {rtype}")
 
             if cast is not None:
+                self.requires_cast = True
                 arg.invoke_arg.value = cast
 
 
@@ -326,21 +332,35 @@ class FuncOverload(Node):
 
         self.overloads.append(func_def)
 
+    def get_overload_bind(self, func_args:OrderedDict, func_def:FuncDef):
+        if len(func_def.func_args) != len(func_args):
+            return None   # can't bind mismatch arg count
+
+        try:
+            binding = func_def.bind_args(func_args)
+        except:
+            return None  # didn't bind arg names / types
+
+        return { 'func_def': func_def, 'binding': binding }
+
     def get_matching_overload(self, func_args:OrderedDict):
         # Bind to the first possible function in the list of overloads
-        for func_def in self.overloads:
-            if len(func_def.func_args) != len(func_args):
-                continue  # can't match this function
+        matches = [ self.get_overload_bind(func_args, func_def) for func_def in self.overloads ]
+        matches = [ m for m in matches if m is not None ]
 
-            try:
-                binding = func_def.bind_args(func_args)
-            except:
-                continue  # can't bind this function
+        if len(matches) == 0:
+            return None
 
-            if binding is not None:
-                return func_def
+        # If only matched a single definition, use it
+        if len(matches) == 1:
+            return matches[0]['func_def']
 
-        return None
+        # we matched several definitions, did one match without casting?
+        non_casting = [ m for m in matches if not m['binding'].requires_cast ]
+        if len(non_casting) == 1:
+            return non_casting[0]['func_def']
+
+        raise AmbiguousOverloadError(f"Matched multiple overloads to function {self.name}")
 
 
 class InvokeFunc(Node):
@@ -383,9 +403,10 @@ class Invoke(Node):
 
     def invoke_as_overload(self, func_ovr:FuncOverload, args_dict:OrderedDict):
         func_def = func_ovr.get_matching_overload(args_dict)
-        if func_def is None:
+        if not func_def:
             # TODO: print full attempted arg signature here
             raise InvalidOverloadError(f"Could not match overload for function {func_ovr.name}")
+
         self.invoke_as_func(func_def, args_dict)
 
     def args_to_dict(self) -> OrderedDict:
