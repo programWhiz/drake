@@ -1,5 +1,6 @@
 import sys
 from collections import OrderedDict
+from pprint import pformat
 
 import llvmlite.ir as ll
 from src.exceptions import *
@@ -134,6 +135,9 @@ def is_op(op_name):
 
 @overload
 def compile_instruction_ir(bb, instr, scope: dict):
+    print("[ERROR] Unhandled LL AST instruction:", pformat(instr), file=sys.stderr)
+    if 'op' not in instr:
+        raise BuildException("LLVM instruction must have 'op':\n" + pformat(instr))
     raise BuildException("Unhandled operation type: " + instr['op'])
 
 
@@ -189,8 +193,11 @@ def compile_instruction_ir(bb, instr: is_op("alloca"), scope: dict):
     ref = instr['ref']
     ref_type = instr.get('type', ref.get('type'))
     ref_type = get_alloc_type(ref_type, scope)
+    name = ref.get("name")
+    if name is None:
+        name = f"var.{next_id()}"
     count = get_alloc_count(bb, instr, scope) or 1
-    ptr = bb.alloca(ref_type, name=ref.get("name"), size=count)
+    ptr = bb.alloca(ref_type, name=name, size=count)
     scope['ptrs'][ref['id']] = ptr
     return ptr
 
@@ -277,14 +284,30 @@ def get_alloc_type(ref_type, scope: dict):
 
     # TODO: handle smart_ptr
     assert ref_type['type'] == 'ptr'
+
+    if 'pointee' in ref_type:
+        pointee = get_alloc_type(ref_type['pointee'], scope)
+        return ll.PointerType(pointee)
+
     class_id = ref_type['class']['id']
     return scope['classes'][class_id]['ll_class']
 
 
 @overload
-def compile_instruction_ir(bb, instr: is_op("gep"), scope: dict):
+def compile_instruction_ir(bb, instr: is_op("ptr"), scope: dict):
     ptr_id = instr['ref']['id']
     ptr = scope['ptrs'][ptr_id]
+    return ptr
+
+
+@overload
+def compile_instruction_ir(bb, instr: is_op("gep"), scope: dict):
+    ref = instr['ref']
+    if 'op' in ref:
+        ptr = compile_instruction_ir(bb, ref, scope)
+    else:
+        ptr_id = instr['ref']['id']
+        ptr = scope['ptrs'][ptr_id]
 
     values = instr.get('value')
     if values is None:

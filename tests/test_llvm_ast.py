@@ -613,6 +613,77 @@ def test_class():
     assert result == 42
 
 
+def test_class_reference_ptr():
+    int32, int64 = ll.IntType(32), ll.IntType(64)
+
+    test_class = {
+        "name": "TestClass",
+        "type": "class",
+        "id": next_id(),
+        "inst_vars": [
+            { "name": "a", "id": next_id(), "type": int32 },
+        ]
+    }
+
+    test_inst = { "name": "test_inst", "id": next_id(), "type": test_class }
+    test_ptr = { "name": "test_ptr", "id": next_id(), "type": { "type": "ptr", "pointee": test_class } }
+    ret = { "name": "ret", "id": next_id(), "type": int32 }
+
+    func_def = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": ret,
+        "args": [],
+        "instrs": [
+            # define "test_inst"
+            {
+                "op": "alloca",
+                "ref": test_inst,
+                "type": { "type": "ptr", "class": test_class }
+            },
+            # create variable pointer `TestClass* test_ptr`
+            {
+                "op": "alloca",
+                "ref": test_ptr,
+                "type": { "type": "ptr", "pointee": { "type": "ptr", "class": test_class } }
+            },
+            # test_ptr = test_inst
+            { "op": "store",
+              "ref": test_ptr,
+              "value": { "op": "gep", "ref": test_inst, "value": 0 } },
+            # test_ptr->a = 42
+            {
+                "op": "store",
+                "ref": {
+                    "op": "gep",
+                    # Use a load instruction to go from TestClass** => TestClass*
+                    "ref": { "op": "load", "ref": test_ptr },
+                    "value": [ 0, 0 ]
+                },
+                "value": { "op": "const_val", "value": ll.Constant(int32, 42) }
+            },
+            # return test_inst.a
+            {
+                "op": "ret",
+                "value": {
+                    "op": "load", "ref": { "op": "gep", "ref": test_inst, "value": [ 0, 0 ] }
+                }
+            }
+        ]
+    }
+
+    module = compile_module_ir({
+        "name": "test",
+        "classes": [ test_class ],
+        "funcs": [ func_def ]
+    })
+
+    cfunc_type = CFUNCTYPE(c_int32)
+
+    result = run_ir_code(module, "test_func", cfunc_type, [1])
+    assert result == 42
+
+
 def test_sizeof():
     _test_sizeof(ll.IntType(8), c_int8, 1)
     _test_sizeof(ll.IntType(16), c_int16, 2)
