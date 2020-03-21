@@ -10,10 +10,12 @@ class Module(VarScope):
 
     def to_ll_ast(self):
         self.build()
+        self.before_ll_ast()
 
         # Provide a place for child elements to write functions
         # at the module level
         self.ll_funcs = []
+        self.ll_classes = []
 
         super().to_ll_ast()
 
@@ -37,8 +39,7 @@ class Module(VarScope):
         if self.is_main:
             self.ll_funcs.append(main_method_ll_ast(init_func['id']))
 
-
-        return { "name": self.name, "instrs": instrs, "funcs": self.ll_funcs, "classes": [] }
+        return { "name": self.name, "instrs": instrs, "funcs": self.ll_funcs, "classes": self.ll_classes }
 
 
 def main_method_ll_ast(entry_func_id):

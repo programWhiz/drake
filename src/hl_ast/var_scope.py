@@ -5,7 +5,6 @@ from src.exceptions import *
 from .variable import Variable
 import llvmlite.ir as ll
 
-
 SymbolStack = Dict[str, Variable]
 
 
@@ -39,7 +38,10 @@ class VarScope(Node):
         for func_inst in self.funcs.values():
             module.ll_funcs.append(func_inst.to_ll_ast())
 
-        return { "op": "pass" }
+        for class_tpl in self.class_tpls.values():
+            module.ll_classes.append(class_tpl.to_ll_ast())
+
+        return { "op": "pass", "comment": self.__class__.__name__ }
 
     def get_locals(self):
         return self.local_symbols
@@ -88,8 +90,30 @@ class VarScope(Node):
         self.funcs[key] = func_inst
         return func_inst
 
-    def get_class_inst(self, class_def, field_binds):
-        key = func_bind.get_type_name()
-        key = f'{self.name}.{key}'
-        if key in self.funcs:
-            return self.funcs[key]
+    def get_class_template(self, class_def, bind_fields):
+        name = class_def.get_fully_scoped_name()
+        fields = ','.join(field_type.shortname() for field_type in bind_fields)
+        key = f"{name}<{fields}>" if fields else name
+
+        existing = self.class_tpls.get(key)
+        if existing:
+            return existing
+
+        from .class_def import ClassTemplate
+        tpl = ClassTemplate(name=key, class_def=class_def, bind_fields=bind_fields)
+        self.class_tpls[key] = tpl
+        return tpl
+
+    def insert_instrs_before(self, node, instrs):
+        idx = self.children.index(node)
+        if not isinstance(instrs, (list, tuple)):
+            instrs = [ instrs ]
+        self.children = self.children[:idx] + instrs + self.children[idx:]
+        self.set_rebuild()
+
+    def insert_instrs_after(self, node, instrs):
+        idx = self.children.index(node)
+        if not isinstance(instrs, (list, tuple)):
+            instrs = [ instrs ]
+        self.children = self.children[:idx+1] + instrs + self.children[idx+1:]
+        self.set_rebuild()

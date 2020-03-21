@@ -13,6 +13,10 @@ class Node:
         self.is_built = False
         self.type:Type = type
 
+    def before_ll_ast(self):
+        for child in self.children:
+            child.before_ll_ast()
+
     def get_locals(self):
         return self.get_enclosing_scope().get_locals()
 
@@ -138,3 +142,11 @@ class Node:
     def get_enclosing_scope(self, search_self=False) -> "VarScope":
         from .var_scope import VarScope
         return self.find_type_up(VarScope, search_self)
+
+    def insert_instrs_before(self, node, instrs):
+        self.parent.insert_instrs_before(self, instrs)
+        self.set_rebuild()
+
+    def insert_instrs_after(self, node, instrs):
+        self.parent.insert_instrs_after(self, instrs)
+        self.set_rebuild()

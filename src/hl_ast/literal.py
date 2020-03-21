@@ -12,6 +12,9 @@ class Literal(Node):
     def build_inner(self):
         pass
 
+    def __repr__(self):
+        return f'Literal({self.value})'
+
     def to_ll_ast(self):
         ll_type = self.type.ll_type()
         return { "op": "const_val",
@@ -20,6 +23,9 @@ class Literal(Node):
 
 
 class StrLiteral(Literal):
+    def __repr__(self):
+        return f'StrLiteral("{self.value}")'
+
     def to_ll_ast(self):
         return { 'op': 'const_str', 'value': self.value }
 

@@ -347,3 +347,4 @@ def test_multiple_overload_cast_fail():
         assert False, "Expected ambiguous overload to fail."
     except:
         pass
+

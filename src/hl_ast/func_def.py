@@ -12,6 +12,7 @@ from ..llvm_ast import next_id
 from .binding import BindInst
 from src.exceptions import *
 from .cast import CastType, SubsumeType
+from .class_def import ClassDef, ClassInst, ClassTemplate, AllocClassInst
 
 
 class FuncType(Type):
@@ -180,7 +181,7 @@ class FuncDef(VarScope):
         return binding
 
     def to_ll_ast(self):
-        return { 'op': 'pass' }
+        return { "op": "pass", "comment": "FuncDef" }
 
 
 class ReturnStmt(Node):
@@ -396,6 +397,9 @@ class Invoke(Node):
         elif isinstance(symbol.var, FuncOverload):
             self.invoke_as_overload(symbol.var, args_dict)
 
+        elif isinstance(symbol.var, ClassDef):
+            self.invoke_as_class_def(symbol.var, args_dict)
+
     def invoke_as_func(self, func_def:FuncDef, args_dict:OrderedDict):
         func_bind = func_def.bind_args(args_dict)
         func_inst = self.get_enclosing_scope().get_func_instance(func_def, func_bind)
@@ -408,6 +412,17 @@ class Invoke(Node):
             raise InvalidOverloadError(f"Could not match overload for function {func_ovr.name}")
 
         self.invoke_as_func(func_def, args_dict)
+
+    def invoke_as_class_def(self, class_def:ClassDef, args_dict:OrderedDict):
+        # ctor_def = class_def.get_ctor()
+        # ctor_bind = FuncBind(ctor_def, args={})
+        # ctor_inst = class_def.get_func_instance(ctor_def, ctor_bind)
+        self.parent.replace_child(self, [
+            AllocClassInst(children=[
+                ClassInst(class_def=class_def)
+            ])
+            # InvokeFunc(ctor_inst, ctor_bind)
+        ])
 
     def args_to_dict(self) -> OrderedDict:
         args = self.children[1:]

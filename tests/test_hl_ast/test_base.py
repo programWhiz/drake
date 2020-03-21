@@ -4,7 +4,7 @@ import tempfile
 from pprint import pformat
 
 from src.llvm_ast import compile_module_ir
-from src.llvm_utils import compile_module_llvm, create_binary_executable
+from src.llvm_utils import compile_module_llvm, create_binary_executable, llvm_shutdown
 
 
 def get_test_stdout(root_node):
@@ -28,5 +28,6 @@ def get_test_stdout(root_node):
             os.remove(obj_file)
         if exe_file:
             os.remove(obj_file)
+        llvm_shutdown()
 
     return output

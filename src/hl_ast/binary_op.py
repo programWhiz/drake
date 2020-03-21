@@ -3,6 +3,7 @@ from .node import Node
 from .variable import Variable, DefVar
 from .union import UnionType, GetUnionPointer
 from .cast import SubsumeType, CastType
+from .class_def import ClassInst, GetAttr, SetAttr, AllocClassInst
 
 
 class BinaryOp(Node):
@@ -17,9 +18,15 @@ class Assign(BinaryOp):
     def build_inner(self):
         left, right = self.children[0:2]
 
-        scope:VarScope = self.get_enclosing_scope()
-        existing:Variable = scope.get_scoped_var(left.var)
+        # If we are assigning to a class field, use SetAttr instead
+        if isinstance(left, GetAttr):
+            return self.parent.replace_child(self, [
+                SetAttr(children=[ left, right ])
+            ])
 
+        scope:VarScope = self.get_enclosing_scope()
+
+        existing:Variable = scope.get_scoped_var(left.var)
         if existing is None:
             scope.put_scoped_var(left.var.name)
         else:
@@ -27,12 +34,15 @@ class Assign(BinaryOp):
 
         # TODO: actually figure out assign in condition
         ltype = left.var.type
-        rtype = right.type
+        rtype = right if isinstance(right, ClassInst) else right.type
 
         # If left is same as right type, can always assign
         if ltype is None or ltype.equivalent(rtype):
             left.var.type = rtype
             self.type = rtype
+
+            # Refer to the class inst itself if constructed on RHS
+            left.var.value = right
 
         # with unconditional assignment, if the left type isn't fixed, we
         # can just create a new reference of the desired type
@@ -58,7 +68,9 @@ class Assign(BinaryOp):
         # TODO: handle non-variable?
 
     def to_ll_ast(self):
-        left = self.children[0].to_ll_ast()
-        right = self.children[1].to_ll_ast()
-
-        return { 'op': 'store', 'ref': left, 'value': right }
+        left, right = self.children
+        return {
+            'op': 'store',
+            'ref': left.to_ll_ast(),
+            'value': right.to_ll_ast(),
+            "comment": "Assign" }

@@ -16,11 +16,29 @@ class Variable:
         # Can we change the type, or is it user specified / fixed?
         self.fixed_type = fixed_type
 
+    def __repr__(self):
+        return f'Variable(type={repr(self.type)}, value={repr(self.value)})'
+
+    def is_class_ptr(self):
+        from .class_def import ClassInst
+        return isinstance(self.type, ClassInst)
+
     def ll_ref(self):
         if not self.type:
             raise UnknownTypeError(f"Variable {self.name} has undefined type.")
 
-        return { "type": self.type.ll_type(), "id": self.ll_id, "name": self.name }
+        # Is the type a class?  If so, then this variable is a pointer to that class
+        ll_type = self.type.ll_type()
+        if self.is_class_ptr():
+            ll_type = {
+                'type': 'ptr',
+                'pointee': {
+                    'type': 'ptr',
+                    'class': ll_type
+                }
+            }
+
+        return { "type": ll_type, "id": self.ll_id, "name": self.name, "comment": repr(self) }
 
 
 class DefVar(Node):
@@ -43,9 +61,12 @@ class DefVar(Node):
 
         scope.put_scoped_var(self.var)
 
+    def __repr__(self):
+        return f'DefVar(name={self.name}, var={repr(self.var)})'
+
     def to_ll_ast(self):
-        # TODO: handle classes and malloc here based on type
-        return { "op": "alloca", "ref": self.var.ll_ref() }
+        ref = self.var.ll_ref()
+        return { "op": "alloca", "ref": ref, "name": self.var.name, "comment": repr(self) }
 
 
 class BareName(Node):
@@ -63,11 +84,14 @@ class BareName(Node):
 
         # If variable is function param, ast can refer directly to function param
         if isinstance(self.var, FuncParamVariable):
-            self.parent.replace_child(self, self.var)
+            self.parent.replace_child(self, [ self.var ])
+
+    def __repr__(self):
+        return f"BareName({self.name})"
 
     def to_ll_ast(self):
         if self.is_rvalue():
-            return { "op": "load", "ref": self.var.ll_ref() }
+            return { "op": "load", "ref": self.var.ll_ref(), "comment": repr(self) }
         elif self.is_lvalue():
             return self.var.ll_ref()
 
@@ -88,5 +112,8 @@ class FuncParamVariable(Node):
         clone.func_arg = self.func_arg.clone()
         return clone
 
+    def __repr__(self):
+        return f'FuncParamVariable({self.name})'
+
     def to_ll_ast(self):
-        return { "op": "func_arg", "value": self.func_arg.index }
+        return { "op": "func_arg", "value": self.func_arg.index, "comment": repr(self) }
