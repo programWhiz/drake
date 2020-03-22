@@ -348,3 +348,59 @@ def test_multiple_overload_cast_fail():
     except:
         pass
 
+
+def test_call_default_value():
+    int32 = NumericType()
+
+    module = Module(is_main=True, name='_main_', children=[
+        # def test_func(int32 x = 123)
+        FuncDef(name='test_func', func_args=[
+            FuncDefArg('x', dtype=int32, default_val=Literal(value=123, type=int32))
+        ], children=[
+            Print(children=[StrLiteral(value="int32"), BareName('x')])
+        ]),
+        Invoke(children=[ BareName('test_func') ])
+    ])
+
+    assert get_test_stdout(module) == 'int32 123'
+
+
+def test_call_multi_default_values():
+    int32 = NumericType()
+
+    module = Module(is_main=True, name='_main_', children=[
+        # def test_func(int32 x = 123)
+        FuncDef(name='test_func', func_args=[
+            FuncDefArg('x', dtype=int32, default_val=Literal(value=123, type=int32)),
+            FuncDefArg('y', dtype=int32, default_val=Literal(value=456, type=int32)),
+            FuncDefArg('z', dtype=int32, default_val=Literal(value=789, type=int32)),
+        ], children=[
+            Print(children=[ BareName('x'), BareName('y'), BareName('z'), ])
+        ]),
+        Invoke(children=[ BareName('test_func') ]),
+        # Zero out one arg at a time by name
+        Invoke(children=[BareName('test_func'), InvokeArg(name='x', value=Literal(value=0, type=int32))]),
+        Invoke(children=[BareName('test_func'), InvokeArg(name='y', value=Literal(value=0, type=int32))]),
+        Invoke(children=[BareName('test_func'), InvokeArg(name='z', value=Literal(value=0, type=int32))]),
+        # Zero out args by position
+        Invoke(children=[BareName('test_func'), InvokeArg(index=0, value=Literal(value=0, type=int32))]),
+        Invoke(children=[BareName('test_func'),
+                         InvokeArg(index=0, value=Literal(value=0, type=int32)),
+                         InvokeArg(index=1, value=Literal(value=0, type=int32)) ]),
+        Invoke(children=[BareName('test_func'),
+                         InvokeArg(index=0, value=Literal(value=0, type=int32)),
+                         InvokeArg(index=1, value=Literal(value=0, type=int32)),
+                         InvokeArg(index=2, value=Literal(value=0, type=int32)) ]),
+    ])
+
+    results = get_test_stdout(module).split('\n')
+    # Pass no args, all use default values
+    assert results[0] == '123 456 789'
+    # Zero args by name
+    assert results[1] == '0 456 789'
+    assert results[2] == '123 0 789'
+    assert results[3] == '123 456 0'
+    # Zero args by position
+    assert results[4] == '0 456 789'
+    assert results[5] == '0 0 789'
+    assert results[6] == '0 0 0'
