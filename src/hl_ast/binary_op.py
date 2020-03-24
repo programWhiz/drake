@@ -1,6 +1,6 @@
 from .var_scope import VarScope
 from .node import Node
-from .variable import Variable, DefVar
+from .variable import Variable, DefVar, BareName
 from .union import UnionType, GetUnionPointer
 from .cast import SubsumeType, CastType
 from .class_def import ClassInst, GetAttr, SetAttr, AllocClassInst
@@ -31,6 +31,10 @@ class Assign(BinaryOp):
             scope.put_scoped_var(left.var.name)
         else:
             left.var = existing
+
+        # If referencing a variable by name, get the variable
+        if isinstance(right, BareName):
+            right = right.var
 
         # TODO: actually figure out assign in condition
         ltype = left.var.type
