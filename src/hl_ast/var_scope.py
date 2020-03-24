@@ -4,28 +4,31 @@ from .node import Node
 from src.exceptions import *
 from .variable import Variable
 import llvmlite.ir as ll
+from pprint import pformat
 
 SymbolStack = Dict[str, Variable]
 
 
 class VarScope(Node):
-    clone_attrs = [ 'name', 'global_symbols', 'local_symbols', 'func_tpls', 'funcs', 'classes', 'class_tpls', ]
+    clone_attrs = [ 'name', 'global_symbols', 'local_symbols', 'funcs', 'classes', 'class_tpls', ]
 
-    def __init__(self, name, local_symbols = None, global_symbols = None, func_tpls=None,
+    def __init__(self, name, local_symbols = None, global_symbols = None,
                  funcs=None, classes=None, class_tpls=None, **kwargs):
         super().__init__(**kwargs)
         self.name = name
         self.global_symbols:SymbolStack = local_symbols or dict()
         self.local_symbols:SymbolStack = global_symbols or dict()
         self.funcs = funcs or OrderedDict()
-        self.func_tpls = func_tpls or OrderedDict()
         self.classes = classes or OrderedDict()
         self.class_tpls = class_tpls or OrderedDict()
         self.dead_refs = defaultdict(list)
 
+    def __repr__(self):
+        cls = self.__class__.__name__
+        return f'{cls}({self.name}, {pformat(self.children)})'
+
     def before_build(self):
         self.funcs = OrderedDict()
-        self.func_tpls = OrderedDict()
         self.classes = OrderedDict()
         self.class_tpls = OrderedDict()
         self.local_symbols = dict()
@@ -35,11 +38,11 @@ class VarScope(Node):
     def to_ll_ast(self):
         module = self.get_enclosing_module(search_self=True)
 
-        for func_inst in self.funcs.values():
-            module.ll_funcs.append(func_inst.to_ll_ast())
-
         for class_tpl in self.class_tpls.values():
             module.ll_classes.append(class_tpl.to_ll_ast())
+
+        for func_inst in self.funcs.values():
+            module.ll_funcs.append(func_inst.to_ll_ast())
 
         return { "op": "pass", "comment": self.__class__.__name__ }
 
@@ -92,7 +95,7 @@ class VarScope(Node):
 
     def get_class_template(self, class_def, bind_fields):
         name = class_def.get_fully_scoped_name()
-        fields = ','.join(field_type.shortname() for field_type in bind_fields)
+        fields = ','.join(field.type.shortname() for field in bind_fields)
         key = f"{name}<{fields}>" if fields else name
 
         existing = self.class_tpls.get(key)
@@ -109,6 +112,8 @@ class VarScope(Node):
         if not isinstance(instrs, (list, tuple)):
             instrs = [ instrs ]
         self.children = self.children[:idx] + instrs + self.children[idx:]
+        for child in self.children:
+            child.parent = self
         self.set_rebuild()
 
     def insert_instrs_after(self, node, instrs):
@@ -116,4 +121,6 @@ class VarScope(Node):
         if not isinstance(instrs, (list, tuple)):
             instrs = [ instrs ]
         self.children = self.children[:idx+1] + instrs + self.children[idx+1:]
+        for child in self.children:
+            child.parent = self
         self.set_rebuild()

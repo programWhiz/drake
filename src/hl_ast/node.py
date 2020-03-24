@@ -73,6 +73,12 @@ class Node:
         self.before_build()
 
         while not self.is_built:
+            # If parent is suddenly not built, go back to parent before
+            # continuing with building the child nodes (unwind).  This happens
+            # when new instructions are dynamically inserted before current instruction.
+            if self.parent and not self.parent.is_built:
+                return
+
             self.is_built = True
             self.before_build_children()
 
@@ -80,7 +86,13 @@ class Node:
                 self.before_build_child(child_idx, child)
                 child.build()
 
-            self.build_inner()
+                # Only build remaining children if child did not invalidate parent node
+                if not self.is_built:
+                    break
+
+            # Only do final inner build once we stabilize
+            if self.is_built:
+                self.build_inner()
 
         self.after_build()
 
@@ -150,3 +162,14 @@ class Node:
     def insert_instrs_after(self, node, instrs):
         self.parent.insert_instrs_after(self, instrs)
         self.set_rebuild()
+
+    def find_children_with_class(self, node_cls, out=None):
+        if out is None:
+            out = []
+
+        for child in self.children:
+            if isinstance(child, node_cls):
+                out.append(child)
+            child.find_children_with_class(node_cls, out)
+
+        return out

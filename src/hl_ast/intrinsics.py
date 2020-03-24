@@ -40,7 +40,7 @@ class Print(Node):
         if isinstance(node, StrLiteral):
             return '%s'
         else:
-            raise BuildException("No known print format for type: " + node)
+            raise BuildException("No known print format for type: " + repr(node))
 
     def get_numeric_format(self, node):
         if node.type.is_int:

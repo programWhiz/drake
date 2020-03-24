@@ -1,4 +1,5 @@
-from src.hl_ast import Module, Assign, BareName, Literal, NumericType, Invoke, Print, DefVar
+from src.hl_ast import Module, Assign, BareName, Literal, NumericType, Invoke, Print, DefVar, FuncDefArg, FuncDef, \
+    InvokeArg
 from src.hl_ast.class_def import *
 from .test_base import get_test_stdout
 

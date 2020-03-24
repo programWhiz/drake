@@ -40,6 +40,10 @@ class Variable:
 
         return { "type": ll_type, "id": self.ll_id, "name": self.name, "comment": repr(self) }
 
+    def before_ll_ast(self):
+        if self.value:
+            self.value.before_ll_ast()
+
 
 class DefVar(Node):
     clone_attrs = [ 'name', 'implicit' ]
@@ -97,6 +101,7 @@ class BareName(Node):
 
 
 class FuncParamVariable(Node):
+    # TODO: add invoke_arg here, for use during func instance building
     def __init__(self, func_arg=None, **kwargs):
         super().__init__(**kwargs)
         self.func_arg = func_arg

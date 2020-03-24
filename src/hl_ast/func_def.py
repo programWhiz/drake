@@ -1,18 +1,18 @@
 import copy
 from typing import List
 from collections import OrderedDict
-from .variable import Variable, BareName, FuncParamVariable
+from .variable import Variable, BareName, FuncParamVariable, DefVar
 from .node import Node
 from .var_scope import VarScope
 from .type import Type, VoidType
 from .union import UnionType
 import llvmlite.ir as ll
 from src.exceptions import *
-from ..llvm_ast import next_id
+from ..llvm_ast import next_id, next_tmp_name
 from .binding import BindInst
 from src.exceptions import *
 from .cast import CastType, SubsumeType
-from .class_def import ClassDef, ClassInst, ClassTemplate, AllocClassInst
+from .class_def import ClassDef, ClassInst, ClassTemplate, AllocClassInst, GetAttr, GetAttrField
 
 
 class FuncType(Type):
@@ -63,28 +63,39 @@ class FuncDefArg:
         self.is_list = is_list
         self.is_dict = is_dict
 
+    def __repr__(self):
+        return f'FuncDefArg({self.name}, idx={self.index}, type={repr(self.dtype)}, default={repr(self.default_val)})'
+
+    def before_ll_ast(self):
+        pass
+
     def clone(self):
         return copy.deepcopy(self)
 
     def bind_to_args(self, args:OrderedDict, matched:OrderedDict):
         arg_by_index = args.get(self.index)
         arg_by_name = args.get(self.name) if self.name else None
+        uses_default_value = False
         desc = self.name or self.index
 
         if arg_by_index and arg_by_name:
             raise DuplicateParamError(f"Function parameter {desc} specified twice.")
 
         if not arg_by_index and not arg_by_name:
-            raise MissingParamError(f"Missing function parameter {desc}.")
+            if not self.default_val:
+                raise MissingParamError(f"Missing function parameter {desc}.")
+
+            # Otherwise, unmatched param, use default value
+            uses_default_value = True
 
         if self.index in matched or self.name in matched:
             raise DuplicateParamError(f"Function parameter {desc} specified twice.")
 
         # Store the match, no other param can match to this arg
         arg = arg_by_index or arg_by_name
-        matched[self.index] = (self, arg)
+        matched[self.index] = (self, arg, uses_default_value)
         if self.name:
-            matched[self.name] = (self, arg)
+            matched[self.name] = (self, arg, uses_default_value)
 
 
 class FuncDef(VarScope):
@@ -96,6 +107,10 @@ class FuncDef(VarScope):
         self.return_nodes = []
         # "template discovery" vs "instance build" mode
         self.build_as_instance = False
+
+    def __repr__(self):
+        args = ', '.join(repr(arg) for arg in self.func_args)
+        return f'FuncDef({self.name}, [{args}])'
 
     def clone(self):
         clone = super().clone()
@@ -111,11 +126,6 @@ class FuncDef(VarScope):
             self.put_scoped_var(FuncParamVariable(arg))
 
     def build_inner(self):
-        # Don't form template in "instance mode", only in "template mode"
-        if not self.build_as_instance:
-            module = self.get_enclosing_module()
-            module.func_tpls[self.name] = self
-
         if not self.return_nodes:
             ret = ReturnStmt()   # return void
             ret.parent = self
@@ -155,8 +165,9 @@ class FuncDef(VarScope):
                 ret_type = UnionType.make_union(ret_type, node.type)
 
     def bind_args(self, bind_args:OrderedDict):
-        if len(bind_args) != len(self.func_args):
-            raise InvokeArgCountError(f"Function {self.name} expects {len(self.func_args)} args, but was called with {len(bind_args)}")
+        num_args_no_default = sum(int(not arg.default_val) for arg in self.func_args)
+        if len(bind_args) < num_args_no_default:
+            raise InvokeArgCountError(f"Function {self.name} requires {len(self.func_args)} args, but was called with {len(bind_args)}")
 
         matched = OrderedDict()
         for arg in self.func_args:
@@ -169,8 +180,8 @@ class FuncDef(VarScope):
 
         positional_args = [ match for key, match in matched.items() if isinstance(key, int) ]
 
-        bind_args = [ FuncBindArg(index=arg.index, invoke_arg=invoke_arg, bind_to_arg=func_arg)
-                      for func_arg, invoke_arg in positional_args ]
+        bind_args = [ FuncBindArg(index=arg.index, invoke_arg=invoke_arg, bind_to_arg=func_arg, use_default=use_default)
+                      for func_arg, invoke_arg, use_default in positional_args ]
 
         bind_args.sort(key=lambda arg: arg.index)
 
@@ -204,14 +215,44 @@ class ReturnStmt(Node):
 
 
 class FuncBindArg:
-    def __init__(self, index, invoke_arg:"InvokeArg", bind_to_arg:FuncDefArg):
+    def __init__(self, index, invoke_arg:"InvokeArg", bind_to_arg:FuncDefArg, use_default:bool):
         self.index = index
         self.invoke_arg = invoke_arg
         self.bind_to_arg = bind_to_arg
+        self.use_default = use_default
 
     def clone(self):
         return copy.deepcopy(self)
 
+    def before_ll_ast(self):
+        self.bind_to_arg.before_ll_ast()
+        if self.invoke_arg:
+            self.invoke_arg.before_ll_ast()
+
+    def ll_type(self):
+        return self.get_arg_type().ll_type()
+
+    def get_arg_type(self):
+        # If a param uses default value (e.g. foo(x=3)), bind to that type
+        if self.use_default:
+            return self.bind_to_arg.default_val.type
+        # Otherwise, use the type of parameter that was passed
+        else:
+            return self.invoke_arg.value.type
+
+    def get_type_name(self):
+        if self.use_default:
+            return self.bind_to_arg.default_val.type.shortname()
+        else:
+            return self.invoke_arg.get_type_name()
+
+    def to_ll_ast(self):
+        # If default param, just build the LL AST of the default param value
+        if self.use_default:
+            return self.bind_to_arg.default_val.to_ll_ast()
+        # Otherwise, func arg is a passed value, build llast for that node
+        else:
+            return self.invoke_arg.to_ll_ast()
 
 class FuncBind:
     def __init__(self, func_def:FuncDef, ret_type:Type, bind_args:List[FuncBindArg], requires_cast:bool = False):
@@ -231,7 +272,7 @@ class FuncBind:
         """Return a unique name based on the bound function signature."""
         name = self.func_def.name
         name = f"{name}_{self.ret_type.shortname()}"
-        arg_str = '_'.join(arg.invoke_arg.get_type_name() for arg in self.bind_args)
+        arg_str = '_'.join(arg.get_type_name() for arg in self.bind_args)
         if arg_str:
             name = f"{name}_{arg_str}"
         return name
@@ -244,7 +285,10 @@ class FuncBind:
 
         for arg in self.bind_args:
             ltype = arg.bind_to_arg.dtype
-            arg_val = arg.invoke_arg.value
+            if arg.use_default:
+                arg_val = arg.bind_to_arg.default_val
+            else:
+                arg_val = arg.invoke_arg.value
             rtype = arg_val.type
             cast = None
 
@@ -291,17 +335,23 @@ class FuncInst(BindInst):
             self.is_built = True
 
     def build_inner(self):
-        for i, arg in enumerate(self.func_def.func_args):
-            arg.dtype = self.func_bind.bind_args[i].invoke_arg.value.type
+        for func_arg, bind_arg in zip(self.func_def.func_args, self.func_bind.bind_args):
+            func_arg.dtype = bind_arg.get_arg_type()
 
         self.func_def.build()
 
     def to_ll_ast(self):
         self.build()
 
+        for arg in self.func_bind.bind_args:
+            arg.before_ll_ast()
+
+        for node in self.func_def.children:
+            node.before_ll_ast()
+
         return {
             "name": self.name,
-            "args": [ { "type": arg.invoke_arg.value.type.ll_type() } for arg in self.func_bind.bind_args ],
+            "args": [ { "type": arg.ll_type() } for arg in self.func_bind.bind_args ],
             "id": self.func_ptr_id,
             "ret": { "type": self.func_bind.ret_type.ll_type() },
             "instrs": [ node.to_ll_ast() for node in self.func_def.children ]
@@ -381,7 +431,7 @@ class InvokeFunc(Node):
 
     def to_ll_ast(self):
         func_ptr = { 'id': self.func_inst.func_ptr_id }
-        func_args = [ arg.invoke_arg.to_ll_ast() for arg in self.func_bind.bind_args ]
+        func_args = [ arg.to_ll_ast() for arg in self.func_bind.bind_args ]
         return { 'op': 'call', 'func': func_ptr, 'args': func_args }
 
 
@@ -389,23 +439,25 @@ class Invoke(Node):
     """Generic invocation of an object / function in drake."""
     def build_inner(self):
         symbol = self.children[0]
-        args_dict = self.args_to_dict()
 
         if isinstance(symbol.var, FuncDef):
-            self.invoke_as_func(symbol.var, args_dict)
+            self.invoke_as_func(symbol.var)
 
         elif isinstance(symbol.var, FuncOverload):
-            self.invoke_as_overload(symbol.var, args_dict)
+            self.invoke_as_overload(symbol.var)
 
         elif isinstance(symbol.var, ClassDef):
-            self.invoke_as_class_def(symbol.var, args_dict)
+            self.invoke_as_class_def(symbol.var)
 
-    def invoke_as_func(self, func_def:FuncDef, args_dict:OrderedDict):
+    def invoke_as_func(self, func_def:FuncDef, args_dict:OrderedDict=None):
+        if args_dict is None:
+            args_dict = self.args_to_dict()
         func_bind = func_def.bind_args(args_dict)
         func_inst = self.get_enclosing_scope().get_func_instance(func_def, func_bind)
         self.parent.replace_child(self, InvokeFunc(func_inst, func_bind))
 
-    def invoke_as_overload(self, func_ovr:FuncOverload, args_dict:OrderedDict):
+    def invoke_as_overload(self, func_ovr:FuncOverload):
+        args_dict = self.args_to_dict()
         func_def = func_ovr.get_matching_overload(args_dict)
         if not func_def:
             # TODO: print full attempted arg signature here
@@ -441,6 +493,24 @@ class InvokeArg(Node):
         self.name = name
         self.index = index
         self.value = value
+
+    def before_ll_ast(self):
+        super().before_ll_ast()
+        self.value.before_ll_ast()
+
+    def build_inner(self):
+        if not self.value:
+            return
+
+        self.value.parent = self.parent
+        self.value.build()
+        self.type = self.value.type
+
+        # Does our arg refer to a variable?  If so, pass that to the function, instead of a ref name.
+        if hasattr(self.value, 'var'):
+            self.type = self.value.var.type
+            self.value = self.value.var
+
 
     def get_type_name(self):
         return self.value.type.shortname()
