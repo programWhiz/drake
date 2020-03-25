@@ -44,6 +44,9 @@ class Variable:
         if self.value:
             self.value.before_ll_ast()
 
+    def to_ll_ast(self):
+        return self.value.to_ll_ast()
+
 
 class DefVar(Node):
     clone_attrs = [ 'name', 'implicit' ]

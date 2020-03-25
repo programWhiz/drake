@@ -8,6 +8,10 @@ class Module(VarScope):
         super().__init__(**kwargs)
         self.is_main = is_main
 
+    # def before_build(self):
+    #   super().before_build()
+    #   self.recursive_rebuild()
+
     def to_ll_ast(self):
         self.build()
         self.before_ll_ast()

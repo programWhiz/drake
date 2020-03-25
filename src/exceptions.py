@@ -69,3 +69,19 @@ class InvokeArgCountError(BuildException):
 
 class UnusedParamError(BuildException):
     pass
+
+
+class FuncOverloadConflictError(BuildException):
+    pass
+
+
+class InvalidOverloadError(BuildException):
+    pass
+
+
+class AmbiguousOverloadError(BuildException):
+    pass
+
+
+class InvalidAttributeError(BuildException):
+    pass

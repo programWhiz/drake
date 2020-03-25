@@ -10,7 +10,7 @@ SymbolStack = Dict[str, Variable]
 
 
 class VarScope(Node):
-    clone_attrs = [ 'name', 'global_symbols', 'local_symbols', 'funcs', 'classes', 'class_tpls', ]
+    clone_attrs = [ 'name', 'global_symbols', 'local_symbols', 'funcs', 'classes' ]
 
     def __init__(self, name, local_symbols = None, global_symbols = None,
                  funcs=None, classes=None, class_tpls=None, **kwargs):
@@ -30,7 +30,7 @@ class VarScope(Node):
     def before_build(self):
         self.funcs = OrderedDict()
         self.classes = OrderedDict()
-        self.class_tpls = OrderedDict()
+        # self.class_tpls = OrderedDict()
         self.local_symbols = dict()
         self.global_symbols = dict()
         self.dead_refs = defaultdict(list)

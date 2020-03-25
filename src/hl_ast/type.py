@@ -8,6 +8,9 @@ class Type:
     def ll_type(self):
         raise NotImplementedError()
 
+    def __repr__(self):
+        return self.shortname()
+
     def shortname(self) -> str:
         raise NotImplementedError()
 
@@ -51,3 +54,22 @@ class VoidType(Type):
 
     def longname(self) -> str:
         return 'void'
+
+
+class TypePtr(Type):
+    def __init__(self, pointee:Type, **kwargs):
+        super().__init__(**kwargs)
+        self.pointee = pointee
+
+    def shortname(self) -> str:
+        return f'p<{self.pointee.shortname()}>'
+
+    def longname(self) -> str:
+        return f'ptr<{self.pointee.longname()}>'
+
+    def equivalent(self, other):
+        return isinstance(other, TypePtr) and \
+               self.pointee.equivalent(other.pointee)
+
+    def ll_type(self):
+        return { 'type': 'ptr', 'pointee': self.pointee.ll_type() }

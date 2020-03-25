@@ -107,6 +107,9 @@ class FuncDef(VarScope):
         self.return_nodes = []
         # "template discovery" vs "instance build" mode
         self.build_as_instance = False
+        self.is_built_inst = False
+        self.is_built_def = False
+        self.did_define_var = False
 
     def __repr__(self):
         args = ', '.join(repr(arg) for arg in self.func_args)
@@ -167,7 +170,8 @@ class FuncDef(VarScope):
     def bind_args(self, bind_args:OrderedDict):
         num_args_no_default = sum(int(not arg.default_val) for arg in self.func_args)
         if len(bind_args) < num_args_no_default:
-            raise InvokeArgCountError(f"Function {self.name} requires {len(self.func_args)} args, but was called with {len(bind_args)}")
+            raise InvokeArgCountError(f"Function {self.name} requires at least {num_args_no_default} args, "
+                                      f"but was called with {len(bind_args)}")
 
         matched = OrderedDict()
         for arg in self.func_args:
@@ -349,9 +353,11 @@ class FuncInst(BindInst):
         for node in self.func_def.children:
             node.before_ll_ast()
 
+        ll_args = [ { "type": arg.ll_type() } for arg in self.func_bind.bind_args ]
+
         return {
             "name": self.name,
-            "args": [ { "type": arg.ll_type() } for arg in self.func_bind.bind_args ],
+            "args": ll_args,
             "id": self.func_ptr_id,
             "ret": { "type": self.func_bind.ret_type.ll_type() },
             "instrs": [ node.to_ll_ast() for node in self.func_def.children ]
@@ -440,7 +446,10 @@ class Invoke(Node):
     def build_inner(self):
         symbol = self.children[0]
 
-        if isinstance(symbol.var, FuncDef):
+        if isinstance(symbol, FuncDef):
+            self.invoke_as_func(symbol)
+
+        elif isinstance(symbol.var, FuncDef):
             self.invoke_as_func(symbol.var)
 
         elif isinstance(symbol.var, FuncOverload):
@@ -465,16 +474,41 @@ class Invoke(Node):
 
         self.invoke_as_func(func_def, args_dict)
 
-    def invoke_as_class_def(self, class_def:ClassDef, args_dict:OrderedDict):
-        # ctor_def = class_def.get_ctor()
-        # ctor_bind = FuncBind(ctor_def, args={})
-        # ctor_inst = class_def.get_func_instance(ctor_def, ctor_bind)
-        self.parent.replace_child(self, [
-            AllocClassInst(children=[
-                ClassInst(class_def=class_def)
-            ])
-            # InvokeFunc(ctor_inst, ctor_bind)
+    def invoke_as_class_def(self, class_def:ClassDef):
+        # Store the new class instance in a temporary variable e.g. tmp123
+        tmp_var = next_tmp_name()
+
+        # We know arg[0] is ClassDef, keep all other args for ctor invoke
+        ctor_args = [ child.clone() for child in self.children[1:] ]
+        # The first arg will be class inst, shift all other args +1 to the right
+        for arg in ctor_args:
+            arg.shift_index(1)
+
+        from .binary_op import Assign
+
+        # Now assign new class instance to the temp var,
+        # and invoke the constructor on the temp var
+        self.parent.insert_instrs_before(self, [
+            DefVar(tmp_var),
+
+            # tmp_inst = MyClass()
+            Assign(children=[
+                BareName(tmp_var),
+                AllocClassInst(children=[
+                    ClassInst(class_def=class_def)
+                ])
+            ]),
+            # constructor(tmp_inst, *args)
+            Invoke(children=[
+                class_def.default_ctor,
+                InvokeArg(index=0, name='me', value=BareName(tmp_var)),
+                *ctor_args ])
         ])
+
+        # No longer need this invocation, replace with reference
+        # to read pointer in the temp var
+        self.parent.replace_child(self, BareName(tmp_var))
+
 
     def args_to_dict(self) -> OrderedDict:
         args = self.children[1:]
@@ -493,6 +527,10 @@ class InvokeArg(Node):
         self.name = name
         self.index = index
         self.value = value
+
+    def shift_index(self, count):
+        if self.index is not None:
+            self.index += count
 
     def before_ll_ast(self):
         super().before_ll_ast()

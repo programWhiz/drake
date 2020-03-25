@@ -1,8 +1,11 @@
 from abc import ABC
 from collections import OrderedDict
 from typing import List
-from .type import Type
-from .var_scope import VarScope, Variable
+
+from .type import Type, TypePtr
+from .numeric import NumericType
+from .var_scope import VarScope
+from .variable import BareName, FuncParamVariable, Variable
 from .node import Node
 from ..llvm_ast import next_id
 from src.exceptions import *
@@ -15,20 +18,72 @@ class ClassDef(VarScope):
         super().__init__(**kwargs)
         assert fields is None or isinstance(fields, OrderedDict), "ClassDef `fields` must be ordered dict."
         self.fields = fields if fields else OrderedDict()
+        self.instance_methods = {}
+        self.default_ctor = None
 
     def build_inner(self):
         # Create a local variable of class name, so we can refer to the class by name
         self.get_enclosing_scope().put_scoped_var(self)
 
-    def get_ctor(self) -> "FuncDef":
-        from .func_def import FuncDef
+        # Build the default ctor
+        self.build_ctor()
+
+    def build_ctor(self) -> "FuncDef":
+        if self.default_ctor:
+            return
+
+        from .func_def import FuncDef, FuncDefArg
+        class_inst = ClassInst(class_def=self)
         ctor_name = self.get_fully_scoped_name() + '.ctor'
-        return FuncDef(name=ctor_name, func_args=[])
+        args = [ FuncDefArg(name='me', index=0, dtype=class_inst) ]
+        args.extend(
+            FuncDefArg(
+                name=field.name,
+                index=index,
+                dtype=field.type or field.default_value.type,
+                default_val=field.default_value)
+            for index, field in enumerate(self.fields.values(), 1))
+
+        # Ctor just sets each field from the ctor args
+        # Create instructions: me.x = x; me.y = y; ...
+        ctor_body = []
+        for field, ctor_arg in zip(self.fields.values(), args[1:]):
+            get_field = GetAttr(children=[BareName('me'), GetAttrField(field.name)])
+            arg_var = FuncParamVariable(func_arg=ctor_arg)
+            setter = SetAttr(children=[ get_field, arg_var ])
+            ctor_body.append(setter)
+
+        self.default_ctor = FuncDef(name=ctor_name, func_args=args, children=ctor_body)
+
+        self.instance_methods['ctor'] = self.default_ctor
+
+        # Insert this into the parent module
+        self.parent.insert_instrs_after(self, self.default_ctor)
+        return self.default_ctor
 
     def get_dtor(self) -> "FuncDef":
         from .func_def import FuncDef
         dtor_name = self.get_fully_scoped_name() + '.dtor'
         return FuncDef(name=dtor_name, func_args=[])
+
+    def get_instance_method(self, name):
+        return self.instance_methods.get(name)
+
+
+class ClassField:
+    def __init__(self, name=None, type=None, default_value=None):
+        self.name:str = name
+        self.type:Type = type
+        self.default_value = default_value
+
+        def_type:Type = self.default_value and self.default_value.type
+
+        if self.type and self.default_value:
+            assert self.type.subsumes(def_type) or def_type.can_cast_to(self.type), \
+                f"Default type {def_type} not compatible with field {self.name} of type {self.type}"
+
+        elif not self.type and def_type:
+            self.type = def_type
 
 
 class ClassTemplate:
@@ -36,7 +91,7 @@ class ClassTemplate:
         super().__init__(**kwargs)
         self.name = name
         self.class_def = class_def
-        self.class_id = next_id()
+        self.class_id = hash(name)
         self.bind_fields = bind_fields
 
     def to_ll_ast(self):
@@ -45,7 +100,7 @@ class ClassTemplate:
             "type": "class",
             "id": self.class_id,
             "inst_vars": [
-                { "name": name, "type": self.bind_fields[i].ll_type() }
+                { "name": name, "type": self.bind_fields[i].type.ll_type() }
                 for i, name in enumerate(self.class_def.fields.keys())
             ]
         }
@@ -65,14 +120,27 @@ class ClassInst(Node):
         self.bind_fields = OrderedDict(class_def.fields)
         self.ptr_id = next_id()
 
+    def can_cast_to(self, other):
+        return False
+
     @property
     def name(self):
         return self.class_def.name
 
+    def shortname(self):
+        return self.class_def.name
+
     def equivalent(self, other):
-        return isinstance(other, ClassInst) and \
-            other.class_def == self.class_def and \
-            all(f is None or f.equivalent(other.bind_fields[k]) for k, f in self.bind_fields.items())
+        return (
+            isinstance(other, ClassInst) and
+            other.class_def.name == self.class_def.name and
+            set(self.bind_fields.keys()) == set(other.bind_fields.keys()) and
+            all(f.type is None or f.type.equivalent(other.bind_fields[k].type)
+                for k, f in self.bind_fields.items())
+        )
+
+    def get_inst_method(self, func_name):
+        return self.class_def.instance_methods.get(func_name)
 
     def get_field_index(self, field_name):
         for i, key in enumerate(self.bind_fields.keys()):
@@ -81,25 +149,25 @@ class ClassInst(Node):
         return -1
 
     def get_field_type(self, field_name):
-        return self.bind_fields[field_name]
+        return self.bind_fields[field_name].type
 
     def before_ll_ast(self):
-        self.class_tpl = self.get_class_template()
+        self.get_class_template()
         super().before_ll_ast()
 
     def get_class_template(self):
-        scope = self.get_enclosing_scope()
+        scope = self.get_enclosing_module()
         bind_fields = list(self.class_def.fields.values())
         return scope.get_class_template(self.class_def, bind_fields)
 
     def ll_type(self):
-        return self.class_tpl.ll_ref()
+        return self.get_class_template().ll_ref()
 
     def __repr__(self):
         return "ClassInst"
 
     def to_ll_ast(self):
-        class_ref = self.class_tpl.ll_ref()
+        class_ref = self.get_class_template().ll_ref()
 
         return {
             "id": self.ptr_id,
@@ -142,7 +210,8 @@ class DerefClassPtr(Node):
         return {
             "op": "gep",
             "ref": ll_ref,
-            "value": 0, "comment": repr(self) }
+            "value": 0,
+            "comment": repr(self) }
 
 
 class AllocClassInst(Node):
@@ -178,13 +247,33 @@ class SetAttr(Node):
 
 
 class GetAttr(Node):
+    clone_attrs = [ 'field_idx', 'field_name' ]
+    def __init__(self, field_idx=None, field_name=None, **kwargs):
+        super().__init__(**kwargs)
+        self.field_idx = field_idx
+        self.field_name = field_name
+
     def build_inner(self):
         var, attr_field = self.children
         if hasattr(var, 'var'):  # reference to variable
             var = var.var
 
-        cls_inst = var.type
         self.field_name = attr_field.field_name
+        # If we are unable to resolve type (still in template or unresolved),
+        # just use these as working assumptions
+        self.field_idx = 0
+        self.type = NumericType(precision=8, is_int=True)
+
+        if isinstance(var, FuncParamVariable):
+            # We don't know what type of param this is yet
+            from .func_def import FuncDef
+            func_def = var.get_ancestor_with_class(FuncDef)
+            if var.type is None and not func_def.build_as_instance:
+                return
+
+        cls_inst = var.type
+        assert isinstance(cls_inst, ClassInst), ('Got non-class var in GetAttr:' + repr(cls_inst))
+
         self.field_idx = cls_inst.get_field_index(self.field_name)
         if self.field_idx < 0:
             cls_name = cls_inst.name
@@ -205,6 +294,9 @@ class GetAttr(Node):
             if child.var.is_class_ptr():
                 ref = { 'op': 'load', 'ref': ref }
 
+        elif isinstance(child, FuncParamVariable):
+            # Func param is pointer to class, get the class instance from pointer
+            ref = { 'op': 'gep', 'ref': child.to_ll_ast(), 'value': 0 }
         else:
             raise Exception('Expected child with `var` attribute: ' + repr(child))
 

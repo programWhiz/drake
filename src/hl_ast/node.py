@@ -4,6 +4,7 @@ from .type import Type
 
 class Node:
     clone_attrs = [ 'type' ]
+    unsolved_nodes = set()
 
     def __init__(self, parent=None, children=None, type:Type=None):
         self.parent:"Node" = parent
@@ -12,6 +13,24 @@ class Node:
             child.parent = self
         self.is_built = False
         self.type:Type = type
+        # Set of nodes which must be solved before this node
+        self.solve_depends = set()
+        # Set of nodes to solve after this node
+        self.solve_nodes = set()
+
+    def mark_unsolved(self, depends_on_node):
+        if isinstance(depends_on_node, (list, tuple, set)):
+            depends_on_node = set(depends_on_node)
+        if isinstance(depends_on_node, set):
+            self.solve_depends |= depends_on_node
+            Node.unsolved_nodes |= depends_on_node
+        else:
+            self.solve_depends.add(depends_on_node)
+            Node.unsolved_nodes.add(depends_on_node)
+        Node.unsolved_nodes.add(self)
+
+    def is_unsolved(self):
+        return len(self.solve_depends)
 
     def before_ll_ast(self):
         for child in self.children:
@@ -65,6 +84,11 @@ class Node:
 
     def set_rebuild(self):
         self.is_built = False
+
+    def recursive_rebuild(self):
+        self.set_rebuild()
+        for child in self.children:
+            child.recursive_rebuild()
 
     def build(self):
         if self.is_built:
@@ -173,3 +197,12 @@ class Node:
             child.find_children_with_class(node_cls, out)
 
         return out
+
+    def get_ancestor_with_class(self, node_cls):
+        if not self.parent:
+            return None
+
+        if isinstance(self.parent, node_cls):
+            return self.parent
+
+        return self.parent.get_ancestor_with_class(node_cls)
