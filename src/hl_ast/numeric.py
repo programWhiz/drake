@@ -90,6 +90,22 @@ class NumericType(Type):
             pass
         return numeric_cast_ops[self.shortname()][other.shortname()]
 
+    def get_float_cast(self, other):
+        if not self.is_int:
+            return None
+        return numeric_cast_ops[self.shortname()][other.shortname()]
+
+
+
+class BoolType(NumericType):
+    def __init__(self):
+        super().__init__(
+            is_bool=True,
+            is_int=True,
+            precision=8,
+            signed_int=False
+        )
+
 
 numeric_cast_ops = {
     'i8': {
