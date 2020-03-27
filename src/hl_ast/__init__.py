@@ -1,6 +1,7 @@
 from .binary_op import *
 from .assign import *
 from .comparison import *
+from .arith_ops import *
 from .class_def import *
 from .func_def import *
 from .intrinsics import *

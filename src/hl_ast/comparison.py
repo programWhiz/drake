@@ -51,14 +51,17 @@ class ComparisonOp(BinaryOp):
             self.cast_left_right_prims(left, right, ltype, rtype)
             return
 
-        if ltype.is_bool:
+        self.concrete_op = self.get_concrete_op(ltype)
+
+    def get_concrete_op(self, dtype):
+        if dtype.is_bool:
             prefix = 'u'  # bool always unsigned int
-        elif ltype.is_int:  # signed or unsigned int
-            prefix = 's' if ltype.signed_int else 'u'
+        elif dtype.is_int:  # signed or unsigned int
+            prefix = 's' if dtype.signed_int else 'u'
         else:  # float
             prefix = 'f'
 
-        self.concrete_op = f'{prefix}{self.op}'
+        return f'{prefix}{self.op}'
 
     def to_ll_ast(self):
         left, right = self.children
