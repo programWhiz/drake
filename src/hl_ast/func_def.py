@@ -484,7 +484,7 @@ class Invoke(Node):
         for arg in ctor_args:
             arg.shift_index(1)
 
-        from .binary_op import Assign
+        from .assign import Assign
 
         # Now assign new class instance to the temp var,
         # and invoke the constructor on the temp var
