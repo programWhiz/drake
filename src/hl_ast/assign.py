@@ -69,3 +69,9 @@ class Assign(BinaryOp):
             'ref': left.to_ll_ast(),
             'value': right.to_ll_ast(),
             "comment": "Assign" }
+
+    def is_child_lvalue(self, child):
+        return child == self.children[0]
+
+    def is_child_rvalue(self, child):
+        return child == self.children[1]

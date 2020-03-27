@@ -93,6 +93,8 @@ class BareName(Node):
         if isinstance(self.var, FuncParamVariable):
             self.parent.replace_child(self, [ self.var ])
 
+        self.type = self.var.type
+
     def __repr__(self):
         return f"BareName({self.name})"
 

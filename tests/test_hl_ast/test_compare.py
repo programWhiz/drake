@@ -1,5 +1,5 @@
 from .test_base import get_test_stdout
-from src.hl_ast import Module, Print, GreaterThan, LessThan, Literal, NumericType, EqualTo
+from src.hl_ast import *
 
 
 def test_gt_ints():
@@ -85,3 +85,24 @@ def test_type_cast():
     ])
 
     assert get_test_stdout(module) == '1 0 0 1 0 1 0 1'
+
+
+def test_compare_vars():
+    module = Module(is_main=True, name='_main_', children=[
+        DefVar('x'),
+        DefVar('y'),
+        Assign(children=[
+            BareName('x'), Literal(value=5, type=NumericType()),
+        ]),
+        Assign(children=[
+            BareName('y'), Literal(value=3, type=NumericType()),
+        ]),
+        Print(children=[
+            GreaterThan(children=[ BareName('x'), BareName('y') ]),
+            GreaterThan(children=[BareName('y'), BareName('x')]),
+            LessThan(children=[BareName('x'), BareName('y')]),
+            LessThan(children=[BareName('y'), BareName('x')]),
+        ])
+    ])
+
+    assert get_test_stdout(module) == '1 0 0 1'

@@ -1,7 +1,7 @@
 from .binary_op import BinaryOp
 from .cast import CastType
 from .func_def import Invoke
-from .variable import BareName
+from .variable import BareName, Variable
 from .numeric import BoolType
 
 
@@ -17,8 +17,7 @@ class ComparisonOp(BinaryOp):
 
     def build_inner(self):
         left, right = self.children
-        ltype = left.type
-        rtype = right.type
+        ltype, rtype = left.type, right.type
 
         if ltype.is_primitive() and rtype.is_primitive():
             self.build_for_primitives(left, right, ltype, rtype)
