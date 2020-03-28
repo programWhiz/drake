@@ -1,4 +1,5 @@
 from .comparison import ComparisonOp
+from .binary_op import BinaryOp
 
 
 class BinaryArithOp(ComparisonOp):

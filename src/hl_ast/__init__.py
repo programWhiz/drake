@@ -5,6 +5,7 @@ from .arith_ops import *
 from .class_def import *
 from .func_def import *
 from .intrinsics import *
+from .if_else import *
 from .literal import *
 from .module import *
 from .node import *
