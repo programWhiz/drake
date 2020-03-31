@@ -968,3 +968,72 @@ def test_cast_pointer():
     out = run_ir_code(module, "test_func", cfunc_type, [])
     # NOTE: 1078529622 is the int equivalent of 3.1415 in bytes
     assert out == 1078529622
+
+
+def test_switch_stmt():
+    int32 = ll.IntType(32)
+
+    test_func = {
+        "name": "test_func",
+        "id": next_id(),
+        "ret": { "type": int32, "id": next_id(), "name": "ret" },
+        "args": [ { "type": int32, "name": "x", "id": next_id() } ],
+        "instrs": [
+            { "op": "switch",
+              "branches": [
+                  # case x == 0: return 0;
+                  { "cond": {
+                      "op": "s==",
+                      "left": { "op": "const_val", "value": ll.Constant(int32, 0) },
+                      "right": { "op": "func_arg", "value": 0 } },
+                    "instrs": [
+                        { "op": "ret", "value": { "op": "const_val", "value": ll.Constant(int32, 0) } }
+                    ] },
+                  # case x == 1: return 1;
+                  { "cond": { "op": "s==",
+                              "left": { "op": "const_val", "value": ll.Constant(int32, 1) },
+                              "right": { "op": "func_arg", "value": 0 } },
+                    "instrs": [
+                        { "op": "ret", "value": { "op": "const_val", "value": ll.Constant(int32, 1) } }
+                    ] },
+                  # case x == 2: return 2;
+                  { "cond": {
+                      "op": "s==",
+                      "left": { "op": "const_val", "value": ll.Constant(int32, 2) },
+                      "right": { "op": "func_arg", "value": 0 } },
+                    "instrs": [
+                          { "op": "ret", "value": { "op": "const_val", "value": ll.Constant(int32, 2) } }
+                    ] },
+                  # case x == 3: return 3;
+                  { "cond": {
+                      "op": "s==",
+                      "left": { "op": "const_val", "value": ll.Constant(int32, 3) },
+                      "right": { "op": "func_arg", "value": 0 } },
+                    "instrs": [
+                          { "op": "ret", "value": { "op": "const_val", "value": ll.Constant(int32, 3) } }
+                    ] },
+                  # default: return 4
+                  { "cond": None, "instrs": [
+                      { "op": "ret", "value": { "op": "const_val", "value": ll.Constant(int32, 4) } }
+                  ] }
+              ]
+            }
+        ]
+    }
+
+    module = compile_module_ir({ "name": "test", "funcs": [ test_func ] })
+    print(module)
+
+    cfunc_type = CFUNCTYPE(c_int32, c_int32)
+
+    out = [
+        run_ir_code(module, "test_func", cfunc_type, [-1]),
+        run_ir_code(module, "test_func", cfunc_type, [0]),
+        run_ir_code(module, "test_func", cfunc_type, [1]),
+        run_ir_code(module, "test_func", cfunc_type, [2]),
+        run_ir_code(module, "test_func", cfunc_type, [3]),
+        run_ir_code(module, "test_func", cfunc_type, [4]),
+        run_ir_code(module, "test_func", cfunc_type, [-1000]),
+    ]
+
+    assert out == [ 4, 0, 1, 2, 3, 4, 4 ]

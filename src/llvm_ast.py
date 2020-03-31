@@ -70,7 +70,16 @@ def compile_module_init_func(module):
 
 
 def compile_func_ir(module, func, scope):
-    arg_types = [arg["type"] for arg in func["args"]]
+    arg_types = []
+
+    for arg in func["args"]:
+        arg_type = arg["type"]
+        if isinstance(arg_type, dict) and arg_type['type'] == 'class':
+            class_id = arg_type['id']
+            arg_type = ll.PointerType(scope['classes'][class_id]['ll_class'])
+
+        arg_types.append(arg_type)
+
     fntype = ll.FunctionType(func["ret"]["type"], arg_types)
     ll_func = ll.Function(module, fntype, name=func["name"])
     block = ll_func.append_basic_block()
@@ -434,6 +443,56 @@ def compile_instruction_ir(bb, instr: is_op("if"), scope: dict):
 
 
 @overload
+def compile_instruction_ir(bb, instr: is_op("switch"), scope: dict):
+    blocks = []
+
+    default_branch = [ br for br in instr['branches'] if br['cond'] is None ]
+    if len(default_branch) == 0:
+        default_branch = None
+    elif len(default_branch) == 1:
+        default_branch = default_branch[0]
+    else:
+        raise BuildException("Switch statement got multiple default cases.")
+
+    # Insert branch statements
+    for branch in instr['branches']:
+        if branch['cond'] is None:
+            continue  # default branch, compile last
+
+        # perform the comparison in the end of current block (false branch)
+        cond = compile_instruction_ir(bb, branch['cond'], scope)
+
+        true_block = bb.append_basic_block()
+        false_block = bb.append_basic_block()
+
+        bb.cbranch(cond, true_block, false_block)
+        bb.position_at_end(true_block)
+
+        for instr in branch['instrs']:
+            compile_instruction_ir(bb, instr, scope)
+
+        bb.position_at_end(false_block)
+        blocks.extend((true_block, false_block))
+
+    if default_branch is not None:
+        block = bb.append_basic_block()
+        bb.branch(block)
+        bb.position_at_end(block)
+        blocks.append(block)
+
+        for instr in default_branch['instrs']:
+            compile_instruction_ir(bb, instr, scope)
+
+    unterm_blocks = [ b for b in blocks if not b.is_terminated ]
+    if unterm_blocks:
+        exit_block = bb.append_basic_block()
+        for block in unterm_blocks:
+            bb.position_at_end(block)
+            bb.branch(exit_block)
+        bb.position_at_end(exit_block)
+
+
+@overload
 def compile_instruction_ir(bb, instr: is_op("trunc"), scope: dict):
     value = compile_instruction_ir(bb, instr['value'], scope)
     return bb.trunc(value, instr['type'])
@@ -500,3 +559,7 @@ def next_id():
     global _id_counter
     _id_counter += 1
     return _id_counter
+
+
+def next_tmp_name():
+    return f"tmp{next_id()}"

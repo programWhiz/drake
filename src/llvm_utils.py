@@ -51,6 +51,14 @@ def build_main_method(module, module_init_func:List[ll.Function]) -> ll.Function
     return main_func
 
 
+def llvm_shutdown():
+    llvm.shutdown()
+    global llc_exe_path, llvm_target, llvm_target_machine
+    llc_exe_path = None
+    llvm_target = None
+    llvm_target_machine = None
+
+
 def compile_module_llvm(module_path:str, module:ll.Module) -> str:
     if llvm_target is None:
         init_llvm_compiler()

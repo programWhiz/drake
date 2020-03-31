@@ -85,3 +85,11 @@ class AmbiguousOverloadError(BuildException):
 
 class InvalidAttributeError(BuildException):
     pass
+
+
+class InvalidTypeError(BuildException):
+    pass
+
+
+class InvalidAssignError(BuildException):
+    pass
