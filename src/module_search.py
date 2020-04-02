@@ -1,10 +1,7 @@
 import os
 from pathlib import Path
-# from src.drake_ast import ImportStmnt
-from typing import Dict, List
-
+from src.ast_utils import *
 from antlr4 import TerminalNode
-
 from src.drake_ast import surf_ast
 from src.grammar.DrakeParser import DrakeParser as DP
 
@@ -31,13 +28,6 @@ def find_module_imports(ast, cur_module_name_list, cur_module_path, search_paths
             'name_dot_list': name_dot_list, 'abs_path': abs_path, 'abs_name': abs_name })
 
     return imports
-
-
-def ast_node_text(ast_node):
-    if isinstance(ast_node, TerminalNode):
-        return ast_node.symbol.text
-    else:
-        return ''.join(ast_node_text(child) for child in ast_node.children)
 
 
 def dot_split_module_name(module_name):

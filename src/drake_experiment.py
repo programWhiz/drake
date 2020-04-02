@@ -5,7 +5,8 @@ from collections import OrderedDict
 import llvmlite.ir as ll
 from src import llvm_cast
 from src.llvm_cast import llvm_type_shortname
-from src.llvm_utils import compile_module_llvm, create_binary_executable, build_main_method
+from src.llvm_utils import compile_module_llvm, create_binary_executable, build_main_method, is_primitive_ptr
+from src.exceptions import *
 
 int_precisions = {
     'int8': 8,
@@ -126,6 +127,9 @@ class TypeSpec():
             return ir_type
         raise TypeError(f"Could not compile type '{self.dtype}' to native.")
 
+    def get_llvm_name(self):
+        return llvm_type_shortname.get(self.dtype, self.dtype)
+
 
 class AnyType(TypeSpec):
     def __init__(self):
@@ -136,6 +140,12 @@ class AnyType(TypeSpec):
 
     def subsumes(self, other_type):
         return True
+
+    def get_llvm_type(self):
+        return ll.PointerType(ll.VoidType())
+
+    def get_llvm_name(self):
+        return "any"
 
 
 class UnionSpec(TypeSpec):
@@ -153,6 +163,12 @@ class UnionSpec(TypeSpec):
             return type_spec
         return UnionSpec(type_specs=[ type_spec ])
 
+    def add_type(self, type_spec):
+        if isinstance(type_spec, UnionSpec):
+            self.type_specs.extend(type_spec.type_specs)
+        else:
+            self.type_specs.append(type_spec)
+
     @classmethod
     def as_single(cls, type_spec):
         if isinstance(type_spec, UnionSpec) and len(type_spec.type_specs) == 1:
@@ -167,17 +183,46 @@ class UnionSpec(TypeSpec):
             len(other_type.type_specs) == self.type_specs and \
             all(t.equivalent(t2) for t, t2 in zip(other_type.type_specs, self.type_specs))
 
+    def get_llvm_name(self):
+        return ','.join(t.get_llvm_name() for t in self.type_specs)
+
 
 class ClassSpec(TypeSpec):
-    def __init__(self, tpl_params=None, **kwargs):
+    def __init__(self, class_def=None, tpl_params=None, **kwargs):
         super().__init__(**kwargs)
-        self.tpl_params = tpl_params or []
+        self.class_def = class_def
+        self.dtype = class_def.name
+        self.tpl_params = tpl_params or OrderedDict()
+        self.llvm_struct = None
 
     def __str__(self):
         s = super().__str__()
         tpl = ', '.join(f"{k}:{v}" for k, v in self.tpl_params.items())
         s += f'<{tpl}>'
         return s
+
+    def equivalent(self, other):
+        return (other and isinstance(other, ClassSpec) and
+            other.class_def == self.class_def and
+            len(self.tpl_params) == len(other.tpl_params) and
+            all(param.equivalent(other.tpl_params[k]) for k, param in self.tpl_params.items()))
+
+    def subsumes(self, other):
+        return (other and isinstance(other, ClassSpec) and
+               (other.class_def == self.class_def or self.class_def.is_super_class(other)) and
+               len(self.tpl_params) == len(other.tpl_params) and
+               all(param.subsumes(other.tpl_params[k]) for k, param in self.tpl_params.items()))
+
+    def get_llvm_type(self):
+        assert self.llvm_struct is not None
+        return self.llvm_struct
+
+    def get_llvm_name(self):
+        name = self.dtype
+        if self.tpl_params:
+            name += '_'
+            name += "_".join(t.get_llvm_name() for t in self.tpl_params.values())
+        return name
 
 
 class FuncPtrSpec(TypeSpec):
@@ -193,7 +238,6 @@ class Node():
         self.type_spec = type_spec
 
     def build_type_spec(self):
-        assert self.type_spec
         return self.type_spec
 
 
@@ -310,10 +354,10 @@ class BinaryOp(Instruction):
 
     def build_llvm_ir(self, bb):
         left = self.left.build_llvm_ir(bb)
-        left_val = bb.load(left) if left.type.is_pointer else left
+        left_val = bb.load(left) if is_primitive_ptr(left) else left
 
         right = self.right.build_llvm_ir(bb)
-        right_val = bb.load(right) if right.type.is_pointer else right
+        right_val = bb.load(right) if is_primitive_ptr(right) else right
 
         op = self.build_llvm_ir_op(bb, left_val, right_val)
 
@@ -329,10 +373,30 @@ class BinaryOp(Instruction):
 
 
 class ArithOp(BinaryOp):
-    def get_result_type(self, ltype, rtype) -> TypeSpec:
-        if not ltype.is_builtin() or not rtype.is_builtin():
-            raise NotImplemented("No operator for non-built-in types.")
+    overload_name = None  # Overwrite this
 
+    def get_result_type(self, ltype, rtype) -> TypeSpec:
+        if ltype.is_builtin() and rtype.is_builtin():
+            return self.get_primitive_result_type(ltype, rtype)
+        else:  # get op func like oper_add
+            assert self.overload_name, f'Must defined attribute `overload_name` for class `{self.__class__}`'
+            right_fn:FuncBindSpec = get_overload_func(ltype, self.overload_name, rtype)
+            left_fn:FuncBindSpec = get_overload_func(rtype, self.overload_name, ltype)
+
+            can_use_right = right_fn.ret_type.subsumes(left_fn.ret_type)
+            can_use_left = left_fn.ret_type.subsumes(right_fn.ret_type)
+
+            if can_use_right and can_use_left:
+                raise AmbiguousOverloadError(
+                    f"Found multiple competing functions `{self.overload_name}` for operands of type `{rtype}` and `{ltype}`")
+            if not can_use_left and not can_use_right:
+                raise InvalidOperationError(
+                    f"No operator `{self.overload_name}` for operands of type `{rtype}` and `{ltype}`.")
+
+            func = right_fn if can_use_right else left_fn
+            return InvokeFuncInst()
+
+    def primitive_result_type(self, ltype, rtype) -> TypeSpec:
         out_type_id = arith_ops_matrix[ ltype.builtin_id() ][ rtype.builtin_id() ]
         out_type = TypeSpec.from_builtin_id(out_type_id)
         self.type_spec = out_type
@@ -351,6 +415,8 @@ class ArithOp(BinaryOp):
 
 class BinaryAdd(ArithOp):
     """Binary addition"""
+    overload_name = 'oper_add'
+
     def build_llvm_ir_op(self, bb, left, right):
         if self.type_spec.is_float():
             return bb.fadd
@@ -359,6 +425,8 @@ class BinaryAdd(ArithOp):
 
 class BinarySub(ArithOp):
     """Binary subtraction"""
+    overload_name = 'oper_sub'
+
     def build_llvm_ir_op(self, bb, left, right):
         if self.type_spec.is_float():
             return bb.fsub
@@ -392,9 +460,27 @@ class AssignAtom(BinaryOp):
 
     def build_llvm_ir(self, bb):
         self.build_type_spec()
+        if self.type_spec.is_primitive():
+            self.build_llvm_primitive(bb)
+        else:
+            self.build_llvm_reference(bb)
 
+    def build_llvm_primitive(self, bb):
         right = self.right.build_llvm_ir(bb)
-        right_val = bb.load(right) if right.type.is_pointer else right
+        right_val = bb.load(right) if is_primitive_ptr(right) else right
+
+        left = self.left.build_llvm_ir(bb)
+        if self.cast_right:
+            right_val = self.cast_right(bb, right_val)
+
+        bb.store(right_val, left)
+
+        return left
+
+    def build_llvm_reference(self, bb):
+        right = self.right.build_llvm_ir(bb)
+
+        right_val = bb.load(right) if is_primitive_ptr(right) else right
 
         left = self.left.build_llvm_ir(bb)
         if self.cast_right:
@@ -428,11 +514,13 @@ class Symbol(Node):
 
 
 class Block(Instruction):
-    def __init__(self, instrs=None, parent=None, funcs=None, classes=None):
+    def __init__(self, instrs=None, parent=None, funcs=None, classes=None, local_vars=None, global_vars=None):
         self.parent = parent
         self.instrs = instrs or []
         self.classes = classes or []
         self.funcs = funcs or []
+        self.local_vars = local_vars or OrderedDict()
+        self.global_vars = global_vars or OrderedDict()
 
         for func in self.funcs:
             func.block = self
@@ -453,9 +541,14 @@ class Module(Block):
 
     def build_llvm_ir(self):
         module = ll.Module()
+        self.build_classes_llvm_ir(module)
         self.build_funcs_llvm_ir(module)
         self.build_init_func_llvm_ir(module)
         return module
+
+    def build_classes_llvm_ir(self, module):
+        for cls in self.classes:
+            cls.build_llvm_ir(module)
 
     def build_funcs_llvm_ir(self, module):
         for func in self.funcs:
@@ -511,7 +604,7 @@ class ReturnStmt(Instruction):
 
         ret_val = self.ret_value.build_llvm_ir(bb)
 
-        if ret_val.type.is_pointer:
+        if is_primitive_ptr(ret_val):
             ret_val = bb.load(ret_val)
 
         bb.ret(ret_val)
@@ -633,14 +726,11 @@ class FuncDef(Block):
             name += '.'
         name += self.name
 
-        typename = str(fntype.return_type)
-        name += '_' + llvm_type_shortname.get(typename, typename)
+        name += '_' + fntype.return_type.llvm_type_name()
 
         if len(fntype.args) > 0:
-            for arg in fntype.args:
-                typename = str(arg)
-                typename = llvm_type_shortname.get(typename, typename)
-                name += '_' + typename
+            name += '_'
+            name += '_'.join(arg.llvm_type_name() for arg in fntype.args)
 
         return name
 
@@ -700,7 +790,7 @@ class FuncBindParam(TypeSpec):
 
     def build_llvm_ir(self, bb):
         value = self.value.build_llvm_ir(bb)
-        return bb.load(value) if value.type.is_pointer else value
+        return bb.load(value) if is_primitive_ptr(value) else value
 
 
 class FuncBindSpec(TypeSpec):
@@ -790,43 +880,130 @@ class InvokeFunc(Instruction):
         return val
 
 
+class ClassDef(Block):
+    """Define a class"""
+    def __init__(self, name, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.instances = []
+
+    def build_type_spec(self):
+        return ClassSpec(class_def=self, tpl_params={
+            k: v.build_type_spec() for k, v in self.local_vars.items() })
+
+    def build_llvm_ir(self, module:ll.Module):
+        existing = dict()
+
+        for inst in self.instances:
+            type:ClassSpec = inst.type_spec
+            bind_name = type.get_llvm_name()
+
+            struct = existing.get(bind_name)
+            if not struct:
+                struct_elems = [p.get_llvm_type() for p in type.tpl_params.values()]
+                struct = module.context.get_identified_type(bind_name)
+                struct.set_body(*struct_elems)
+                existing[bind_name] = struct
+
+            inst.llvm_class = struct
+            inst.type_spec.llvm_struct = struct
+
+
+class InstClass(Instruction):
+    """Instantiation of a class"""
+    def __init__(self, class_def, ctor_args=None, **kwargs):
+        super().__init__(**kwargs)
+        self.class_def = class_def
+        self.class_def.instances.append(self)
+        self.ctor_args = ctor_args or {}
+        self.llvm_class = None  # class built in "build classes" step of module
+        self.llvm_cls_inst = None  # instantiated class in llvm
+
+    def build_type_spec(self):
+        # self.class_def.bind_params(self.bind_params)
+        class_spec = self.class_def.build_type_spec()
+        # overwrite the types of any bind vars
+        for k, v in self.ctor_args.items():
+            class_spec.tpl_params[k] = v.build_type_spec()
+        self.type_spec = class_spec
+        return self.type_spec
+
+    def build_llvm_ir(self, bb):
+        # TODO: malloc or make smart ptr here?
+        if self.llvm_cls_inst is None:
+            self.llvm_cls_inst = bb.alloca(self.llvm_class)
+        return self.llvm_cls_inst
+
+
+class GetAttr(Instruction):
+    def __init__(self, block, attr_name, **kwargs):
+        super().__init__(**kwargs)
+        self.block = block
+        self.attr_name = attr_name
+
+    def build_type_spec(self):
+        attr = self.block.get_attr(self.attr_name)
+        self.type_spec = attr.build_type_spec()
+        print("Get attr:", self.attr_name, "<=", type_spec)
+        return
+
+    def build_llvm_ir(self, bb):
+        val = self.binding.build_llvm_call(bb)
+        return val
+
+
 def test():
-    x = Symbol(name='x')
-    ass_x = AssignAtom(left=x, right=BoolLiteral(True))
+    pair_class = ClassDef(
+        name="Pair", local_vars={ 'a': Symbol(name='a'), 'b': Symbol(name='b') })
 
-    y = Symbol(name='y')
-    ass_y = AssignAtom(left=y, right=BoolLiteral(True))
+    pair = Symbol(name='pair')
+    pair2 = Symbol(name='pair2')
 
-    add_xy = BinaryAdd(left=x, right=y)
-    z = Symbol(name='z')
-    ass_z = AssignAtom(left=z, right=add_xy)
+    inst_pair = InstClass(pair_class, ctor_args={
+        'a': Int32Literal(value=6), 'b': Int32Literal(value=10) })
+
+    ass_pair = AssignAtom(left=pair, right=inst_pair)
+
+    inst_pair = InstClass(pair_class, ctor_args={
+        'a': FloatLiteral(value=3.1415), 'b': FloatLiteral(value=1.234) })
+
+    ass_pair2 = AssignAtom(left=pair2, right=inst_pair)
+    # ass_pair_a = AssignAtom(left=GetAttr(pair, 'a'), right=Int32Literal(100))
+    # ass_pair_b = AssignAtom(left=GetAttr(pair, 'b'), right=Int32Literal(256))
+
+    # add_xy = BinaryAdd(left=x, right=GetAttr(pair, 'a'))
+    #
+    # z = Symbol(name='z')
+    # ass_z = AssignAtom(left=z, right=add_xy)
 
     # fn subtract(a, b): return a - b;
-    param_a = FuncParam(name='a', default_value=Int32Literal(1), index=0)
-    param_b = FuncParam(name='b', index=1)
-    a_minus_b = BinarySub(left=param_a, right=param_b)
-    c = Symbol(name='c')
-    ass_c = AssignAtom(left=c, right=a_minus_b)
-    return_c = ReturnStmt(c)
-
-    subtract = FuncDef(
-        name='subtract',
-        params=OrderedDict(a=param_a, b=param_b),
-        instrs=[ ass_c, return_c ],
-        return_stmts=[ return_c ])
-
-    w = Symbol(name='w')
-
-    ass_w = AssignAtom(left=w, right=InvokeFunc(
-        func=subtract,
-        args=[z, y],
-    ))
-
-    ass_w2 = AssignAtom(left=w, right=InvokeFunc(func=subtract, args=[ Int32Literal(3), FloatLiteral(4) ]))
+    # param_a = FuncParam(name='a', default_value=Int32Literal(1), index=0)
+    # param_b = FuncParam(name='b', index=1)
+    # a_minus_b = BinarySub(left=param_a, right=param_b)
+    # c = Symbol(name='c')
+    # ass_c = AssignAtom(left=c, right=a_minus_b)
+    # return_c = ReturnStmt(c)
+    #
+    # subtract = FuncDef(
+    #     name='subtract',
+    #     params=OrderedDict(a=param_a, b=param_b),
+    #     instrs=[ ass_c, return_c ],
+    #     return_stmts=[ return_c ])
+    #
+    # w = Symbol(name='w')
+    #
+    # ass_w = AssignAtom(left=w, right=InvokeFunc(
+    #     func=subtract,
+    #     args=[z, y],
+    # ))
+    #
+    # ass_w2 = AssignAtom(left=w, right=InvokeFunc(func=subtract, args=[ Int32Literal(3), FloatLiteral(4) ]))
 
     module = Module(abs_name='__main__', abs_path=__file__,
-                    funcs=[ subtract ],
-                    instrs=[ ass_x, ass_y, ass_z, ass_w, ass_w2 ])
+                    funcs=[],
+                    classes=[ pair_class ],
+                    instrs=[ ass_pair, ass_pair2 ])
+
     module.build_type_spec()
 
     print("=== IR Code ===\n\n")
@@ -838,6 +1015,7 @@ def test():
     build_main_method(llvm_module, module.llvm_init_func)
     obj_file = compile_module_llvm("/tmp/tmp.dk", llvm_module)
     create_binary_executable("/tmp/tmp.exe", [ obj_file ], run_exe=True)
+
 
 if __name__ == '__main__':
     test()

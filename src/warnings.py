@@ -16,6 +16,13 @@ class _Warnings:
     shadow_var = WarningType('shadow_var', WARNING)
     change_var_type = WarningType('change_var_type', WARNING)
     duplicate_var = WarningType('duplicate_var', ERROR)
+    implicit_cast_int_signed_unsigned = WarningType('implicit_cast_int_signed_unsigned', ERROR)
+    implicit_cast_int_more_precision = WarningType('implicit_cast_float_more_precision', WARNING)
+    implicit_cast_int_less_precision = WarningType('implicit_cast_float_less_precision', WARNING)
+    implicit_cast_int_float = WarningType('implicit_cast_int_float', ERROR)
+    implicit_cast_float_int = WarningType('implicit_cast_int_float', ERROR)
+    implicit_cast_float_more_precision = WarningType('implicit_cast_float_more_precision', WARNING)
+    implicit_cast_float_less_precision = WarningType('implicit_cast_float_less_precision', WARNING)
 
     def emit(self, err, msg):
         if err.level <= self.IGNORE:

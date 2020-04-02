@@ -1,5 +1,6 @@
 from typing import List
 from .type import Type
+from ..cpp_builder import CPPBuilder
 
 
 class Node:
@@ -36,6 +37,13 @@ class Node:
         for child in self.children:
             child.before_ll_ast()
 
+    def before_cpp(self):
+        for child in self.children:
+            child.before_cpp()
+
+    def to_cpp(self, b:CPPBuilder):
+        raise NotImplementedError(f"to_cpp not enabled for node of type: {self}")
+
     def get_locals(self):
         return self.get_enclosing_scope().get_locals()
 
@@ -65,7 +73,7 @@ class Node:
         if isinstance(repl_nodes, Node):
             repl_nodes = [ repl_nodes ]
 
-        index_of = self.children.index(node)
+        index_of = node if isinstance(node, int) else self.children.index(node)
         self.children[index_of:index_of+1] = repl_nodes
         for node in repl_nodes:
             node.parent = self
@@ -179,6 +187,10 @@ class Node:
         from .var_scope import VarScope
         return self.find_type_up(VarScope, search_self)
 
+    def get_enclosing_conditional(self, search_self=False) -> "ConditionalStmt":
+        from .conditional import ConditionalStmt
+        return self.find_type_up(ConditionalStmt, search_self)
+
     def insert_instrs_before(self, node, instrs):
         self.parent.insert_instrs_before(self, instrs)
         self.set_rebuild()
@@ -206,3 +218,9 @@ class Node:
             return self.parent
 
         return self.parent.get_ancestor_with_class(node_cls)
+
+    def is_in_conditional(self):
+        return self.parent and (self.parent.is_conditional() or self.parent.is_in_conditional())
+
+    def is_conditional(self):
+        return False

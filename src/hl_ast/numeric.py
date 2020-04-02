@@ -95,6 +95,18 @@ class NumericType(Type):
             return None
         return numeric_cast_ops[self.shortname()][other.shortname()]
 
+    def cpp_type(self):
+        if self.is_int:
+            if not self.signed_int:
+                return f'uint{self.precision}_t'
+            return f'int{self.precision}_t'
+        else:
+            if self.precision == 32:
+                return 'float'
+            elif self.precision == 64:
+                return 'double'
+            else:
+                return 'long double'
 
 
 class BoolType(NumericType):
@@ -105,6 +117,22 @@ class BoolType(NumericType):
             precision=8,
             signed_int=False
         )
+
+    def cpp_type(self):
+        return 'bool'
+
+
+class BitType(NumericType):
+    def __init__(self):
+        super().__init__(
+            is_bool=True,
+            is_int=True,
+            precision=1,
+            signed_int=False
+        )
+
+    def cpp_type(self):
+        return 'bool'
 
 
 numeric_cast_ops = {

@@ -1,13 +1,12 @@
 import sys
 from pathlib import Path
-import antlr4
 from src.exceptions import *
-from src.error_listener import format_source_code_error
+from src.inter_compile import IntermediateCompiler
 from src.module_search import find_module_imports, find_symbol_imports, ast_node_text
 from src.grammar.DrakeParser import DrakeParser as DP
 from src.code_graph_types import *
 from src.resolve_graph import resolve_code_graph
-from src.type_calc import calculate_types
+from src.ast_utils import *
 
 
 def init_code_program(ast):
@@ -67,22 +66,14 @@ def build_code_graph(module):
                 print_source_code_error(symbol['ast_node'])
                 raise SymbolNotFound(err)
 
-    build_block(module, sys.stdout)
-    print_code_tree(module)
-    calculate_types(module)
-
-
-id_counter = 0
-
-def next_id():
-    global id_counter
-    id_counter += 1
-    return f"{id_counter:x}"
+    ic = IntermediateCompiler()
+    ic.compile(module)
+    # build_block(module, sys.stdout)
+    # print_code_tree(module)
+    # calculate_types(module)
 
 
 def build_block(block, f):
-    block_id = f"block_{next_id()}"
-    print("begin_block", block_id, file=f)
 
     for child in block.ast_node.children:
         if isinstance(child, DP.StmtContext):
@@ -91,55 +82,6 @@ def build_block(block, f):
             continue  # end of file
         else:
             raise_unknown_ast_node(block, child)
-
-    print("end_block", block_id, file=f)
-
-
-def ast_is_empty(ast_node):
-    return ast_text_is(ast_node, ("<EOF>", "\n"))
-
-
-def ast_text_is(ast_node, text):
-    if not isinstance(text, (tuple, list)):
-        text = (text,)
-    return isinstance(ast_node, antlr4.TerminalNode) and ast_node.symbol.text in text
-
-
-def ast_location_str(ast_node):
-    loc = ast_node_location(ast_node)
-    return f"In file \"{loc['file']}\" line {loc['line']} col {loc['col']}"
-
-
-def ast_node_location(ast_node):
-    if isinstance(ast_node, antlr4.TerminalNode):
-        loc = ast_node.symbol
-    else:
-        loc = ast_node.start
-    return { 'file': loc.source[1].fileName, 'line': loc.line, 'col': loc.column }
-
-
-def raise_unknown_ast_node(block, ast_node):
-    node_type = ast_node.__class__.__name__
-    if isinstance(ast_node, antlr4.TerminalNode):
-        ast_text = ast_node.symbol.text
-    else:
-        ast_text = ast_node.start.text
-
-    loc_str = ast_location_str(ast_node)
-    error = f"{loc_str}: Unhandled AST node type: {node_type}, `{ast_text}`"
-    sys.stderr.write(f"Parse error {error}\n")
-
-    print_source_code_error(ast_node)
-    raise ParseException(error)
-
-
-def print_source_code_error(ast_node):
-    loc = ast_node_location(ast_node)
-    source_code = open(loc['file'], 'rt').read()
-    source_code_error = format_source_code_error(source_code, loc['line'], loc['col'])
-    sys.stderr.write(source_code_error)
-    sys.stderr.write("\n")
-
 
 def build_statement(block, ast_stmt):
     child = ast_stmt.children[0]
@@ -176,23 +118,21 @@ def build_simple_stmt(block, ast_stmt):
                 raise_unknown_ast_node(block, child)
 
 
-def build_flow_statement(block, ast_node):
+def build_flow_statement(block, ast_node, f):
     """
     flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt;
     """
     node = ast_node.children[0]
     if isinstance(node, DP.Break_stmtContext):
-        instr = Break(block, node)
-        block.add_instr(instr)
+        print("goto", block.begin, f)
     elif isinstance(node, DP.Continue_stmtContext):
-        instr = Continue(block, node)
-        block.add_instr(instr)
+        print("goto", block.end, f)
     elif isinstance(node, DP.Yield_stmtContext):
-        instr = build_yield_stmt(block, node)
+        build_yield_stmt(block, node)
     elif isinstance(node, DP.Raise_stmtContext):
-        instr = build_raise_stmt(block, node)
+        build_raise_stmt(block, node)
     elif isinstance(node, DP.Return_stmtContext):
-        instr = build_return_stmt(block, node)
+        build_return_stmt(block, node)
     else:
         raise_unknown_ast_node(block, node)
 
@@ -1219,7 +1159,3 @@ def build_suite(block, ast_node):
         stmts.append(stmt_instr)
 
     return stmts
-
-
-def term_text_equals(term_node, text):
-    return isinstance(term_node, antlr4.TerminalNode) and term_node.symbol.text == text

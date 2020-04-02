@@ -47,17 +47,25 @@ class Variable:
     def to_ll_ast(self):
         return self.value.to_ll_ast()
 
+    def cpp_name(self):
+        return f'{self.name}_{self.ll_id}'
+
+    def to_cpp(self, b):
+        if self.value:
+            self.value.to_cpp(b)
+
 
 class DefVar(Node):
     clone_attrs = [ 'name', 'implicit' ]
 
-    def __init__(self, name, implicit:bool=False, **kwargs):
+    def __init__(self, name, implicit:bool=False, fixed_type:bool=False, **kwargs):
         super().__init__(**kwargs)
         self.name = name
         self.implicit = implicit
+        self.fixed_type = fixed_type
 
     def build_inner(self):
-        self.var = Variable(self.name, type=self.type)
+        self.var = Variable(self.name, type=self.type, fixed_type=self.fixed_type)
         scope = self.get_enclosing_scope()
         existing = scope.get_scoped_var(self.var, local_only=True)
 
@@ -74,6 +82,9 @@ class DefVar(Node):
     def to_ll_ast(self):
         ref = self.var.ll_ref()
         return { "op": "alloca", "ref": ref, "name": self.var.name, "comment": repr(self) }
+
+    def to_cpp(self, b):
+        b.c.emit(f"{self.var.type.cpp_type()} {self.var.cpp_name()}")
 
 
 class BareName(Node):
@@ -104,6 +115,9 @@ class BareName(Node):
         elif self.is_lvalue():
             return self.var.ll_ref()
 
+    def to_cpp(self, b):
+        b.c.emit(self.var.cpp_name())
+
 
 class FuncParamVariable(Node):
     # TODO: add invoke_arg here, for use during func instance building
@@ -127,3 +141,6 @@ class FuncParamVariable(Node):
 
     def to_ll_ast(self):
         return { "op": "func_arg", "value": self.func_arg.index, "comment": repr(self) }
+
+    def to_cpp(self, b):
+        b.c.emit(self.func_arg.cpp_name())

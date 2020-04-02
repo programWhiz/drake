@@ -563,4 +563,3 @@ binary_comparison_operator_classes = {
     "isa": CompareIsA,
     **multi_comparison_operator_classes
 }
-

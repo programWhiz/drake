@@ -2,7 +2,7 @@ from .binary_op import BinaryOp
 from .cast import CastType
 from .func_def import Invoke
 from .variable import BareName, Variable
-from .numeric import BoolType
+from .numeric import BitType
 
 
 class ComparisonOp(BinaryOp):
@@ -13,7 +13,7 @@ class ComparisonOp(BinaryOp):
         self.op = op
         self.concrete_op = None
         self.overload = overload
-        self.type = BoolType()
+        self.type = BitType()
 
     def build_inner(self):
         left, right = self.children
@@ -71,6 +71,15 @@ class ComparisonOp(BinaryOp):
             'left': left.to_ll_ast(),
             'right': right.to_ll_ast(),
         }
+
+    def to_cpp(self, b):
+        left, right = self.children
+
+        b.c.emit('(')
+        left.to_cpp(b)
+        b.c.emit(self.op)
+        right.to_cpp(b)
+        b.c.emit(')')
 
 
 class GreaterThan(ComparisonOp):

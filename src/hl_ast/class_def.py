@@ -1,3 +1,4 @@
+import re
 from abc import ABC
 from collections import OrderedDict
 from typing import List
@@ -7,7 +8,7 @@ from .numeric import NumericType
 from .var_scope import VarScope
 from .variable import BareName, FuncParamVariable, Variable
 from .node import Node
-from ..llvm_ast import next_id
+from ..llvm_ast import next_id, next_tmp_name
 from src.exceptions import *
 
 
@@ -94,6 +95,9 @@ class ClassTemplate:
         self.class_id = hash(name)
         self.bind_fields = bind_fields
 
+    def cpp_name(self):
+        return re.sub(r'\W', '_', self.name)
+
     def to_ll_ast(self):
         return {
             "name": self.name,
@@ -112,6 +116,17 @@ class ClassTemplate:
             "name": self.name,
         }
 
+    def to_cpp(self, b):
+        b.h.emit(f"""\nclass {self.cpp_name()} {{\n
+        public:\n""")
+
+        with b.h.with_indent():
+            for i, name in enumerate(self.class_def.fields.keys()):
+                dtype = self.bind_fields[i].type.cpp_type()
+                b.h.emit(f"{dtype} {name};\n")
+
+        b.h.emit('\n};\n')
+
 
 class ClassInst(Node):
     def __init__(self, class_def:ClassDef, **kwargs):
@@ -119,6 +134,7 @@ class ClassInst(Node):
         self.class_def = class_def.clone()
         self.bind_fields = OrderedDict(class_def.fields)
         self.ptr_id = next_id()
+        self.cpp_var_name = f'ptr_{self.ptr_id}'
 
     def can_cast_to(self, other):
         return False
@@ -155,6 +171,10 @@ class ClassInst(Node):
         self.get_class_template()
         super().before_ll_ast()
 
+    def before_cpp(self):
+        self.get_class_template()
+        super().before_cpp()
+
     def get_class_template(self):
         scope = self.get_enclosing_module()
         bind_fields = list(self.class_def.fields.values())
@@ -178,6 +198,13 @@ class ClassInst(Node):
             }
         }
 
+    def cpp_type(self):
+        cpp_name = self.get_class_template().cpp_name()
+        return cpp_name + '*'
+
+    def to_cpp(self, b):
+        b.c.emit(self.cpp_var_name)
+
 
 class StackAllocClassInst(Node):
     def __init__(self, **kwargs):
@@ -197,6 +224,14 @@ class StackAllocClassInst(Node):
             "ref": ll_ref,
             "type": ll_ref['type'] }
 
+    def to_cpp(self, b):
+        class_inst = self.children[0]
+        class_name = class_inst.cpp_type()
+        tmp = next_tmp_name()
+        class_no_ptr = class_name[:-1]
+        b.c.emit(f'{class_no_ptr} {tmp};\n')
+        b.c.emit(f'{class_name} {class_inst.cpp_var_name} = &{tmp};\n')
+
 
 class DerefClassPtr(Node):
     def __repr__(self):
@@ -212,6 +247,9 @@ class DerefClassPtr(Node):
             "ref": ll_ref,
             "value": 0,
             "comment": repr(self) }
+
+    def to_cpp(self, b):
+        b.c.emit(self.children[0].cpp_var_name)
 
 
 class AllocClassInst(Node):
@@ -245,9 +283,16 @@ class SetAttr(Node):
     def is_child_rvalue(self, child):
         return child == self.children[1]
 
+    def to_cpp(self, b):
+        left, right = self.children
+        left.to_cpp(b)
+        b.c.emit(' = ')
+        right.to_cpp(b)
+
 
 class GetAttr(Node):
     clone_attrs = [ 'field_idx', 'field_name' ]
+
     def __init__(self, field_idx=None, field_name=None, **kwargs):
         super().__init__(**kwargs)
         self.field_idx = field_idx
@@ -285,8 +330,21 @@ class GetAttr(Node):
         child = repr(self.children[0])
         return f'GetAttr({child}, {self.field_name})'
 
+    def to_cpp(self, b):
+        child = self.children[0]
+
+        if hasattr(child, 'var'):  # reference to variable
+            varname = child.var.cpp_name()
+        elif isinstance(child, FuncParamVariable):
+            varname = child.func_arg.cpp_name()
+        else:
+            raise Exception(f"Unsupported child node type for GetAttr: {repr(child)}")
+
+        b.c.emit(f'{varname}->{self.field_name}')
+
     def to_ll_ast(self):
         child = self.children[0]
+
         if hasattr(child, 'var'):  # reference to variable
             # This works if direct reference to class
             ref = child.var.ll_ref()

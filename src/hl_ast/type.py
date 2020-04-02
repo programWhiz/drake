@@ -8,6 +8,9 @@ class Type:
     def ll_type(self):
         raise NotImplementedError()
 
+    def cpp_type(self):
+        raise NotImplementedError()
+
     def __repr__(self):
         return self.shortname()
 
@@ -39,6 +42,9 @@ class Type:
 class VoidType(Type):
     def ll_type(self):
         return ll.VoidType()
+
+    def cpp_type(self):
+        return 'void'
 
     def is_primitive(self):
         return True
@@ -73,3 +79,6 @@ class TypePtr(Type):
 
     def ll_type(self):
         return { 'type': 'ptr', 'pointee': self.pointee.ll_type() }
+
+    def cpp_type(self):
+        return self.pointee.cpp_type() + '*'

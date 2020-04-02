@@ -1,4 +1,5 @@
 import copy
+import re
 from typing import List
 from collections import OrderedDict
 from .variable import Variable, BareName, FuncParamVariable, DefVar
@@ -71,6 +72,9 @@ class FuncDefArg:
 
     def clone(self):
         return copy.deepcopy(self)
+
+    def cpp_name(self):
+        return f'_func_arg_{self.name}_{self.index}'
 
     def bind_to_args(self, args:OrderedDict, matched:OrderedDict):
         arg_by_index = args.get(self.index)
@@ -198,6 +202,9 @@ class FuncDef(VarScope):
     def to_ll_ast(self):
         return { "op": "pass", "comment": "FuncDef" }
 
+    def to_cpp(self, b):
+        pass
+
 
 class ReturnStmt(Node):
     def build_inner(self):
@@ -217,6 +224,11 @@ class ReturnStmt(Node):
 
         return { 'op': 'ret_void' }
 
+    def to_cpp(self, b):
+        b.c.emit('return ')
+        if self.children:
+            self.children[0].to_cpp(b)
+
 
 class FuncBindArg:
     def __init__(self, index, invoke_arg:"InvokeArg", bind_to_arg:FuncDefArg, use_default:bool):
@@ -235,6 +247,12 @@ class FuncBindArg:
 
     def ll_type(self):
         return self.get_arg_type().ll_type()
+
+    def cpp_type(self):
+        return self.get_arg_type().cpp_type()
+
+    def cpp_name(self):
+        return self.bind_to_arg.cpp_name()
 
     def get_arg_type(self):
         # If a param uses default value (e.g. foo(x=3)), bind to that type
@@ -363,6 +381,28 @@ class FuncInst(BindInst):
             "instrs": [ node.to_ll_ast() for node in self.func_def.children ]
         }
 
+    def cpp_name(self):
+        name = f'{self.name}_{self.func_ptr_id}'
+        return re.sub(r'\W', '_', name)
+
+    def to_cpp(self, b):
+        ret = self.func_bind.ret_type.cpp_type()
+        name = self.cpp_name()
+
+        args = ', '.join([ f'{arg.cpp_type()} {arg.cpp_name()}'
+                           for arg in self.func_bind.bind_args ])
+
+        b.h.emit(f'\n{ret} {name}({args});\n')
+
+        b.c.emit(f'{ret} {name} ({args}) {{\n')
+
+        with b.c.with_indent():
+            for child in self.func_def.children:
+                child.to_cpp(b)
+                b.c.emit(';\n')
+
+        b.c.emit('}\n\n')
+
 
 class FuncOverload(Node):
     clone_attrs = [ 'name', 'overloads' ]
@@ -439,6 +479,19 @@ class InvokeFunc(Node):
         func_ptr = { 'id': self.func_inst.func_ptr_id }
         func_args = [ arg.to_ll_ast() for arg in self.func_bind.bind_args ]
         return { 'op': 'call', 'func': func_ptr, 'args': func_args }
+
+    def to_cpp(self, b):
+        name = self.func_inst.cpp_name()
+        b.c.emit(f'{name}(')
+        for i, arg in enumerate(self.func_bind.bind_args):
+            if i > 0:
+                b.c.emit(',')
+            if arg.use_default:
+                arg.bind_to_arg.default_val.to_cpp(b)
+            else:
+                arg.invoke_arg.to_cpp(b)
+        b.c.emit(')')
+
 
 
 class Invoke(Node):
@@ -555,3 +608,6 @@ class InvokeArg(Node):
 
     def to_ll_ast(self):
         return self.value.to_ll_ast()
+
+    def to_cpp(self, b):
+        self.value.to_cpp(b)

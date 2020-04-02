@@ -3,6 +3,7 @@ from .numeric import NumericType
 from src.exceptions import *
 from .cast import CastType
 from .literal import StrLiteral
+from .union import UnionType
 
 
 class CallIntrinsic(Node):
@@ -16,6 +17,15 @@ class CallIntrinsic(Node):
         args = [ child.to_ll_ast() for child in self.children ]
         return { "op": "call", "intrinsic": self.intrinsic, "args": args }
 
+    def to_cpp(self, b):
+        b.c.emit(f"{self.intrinsic}(")
+        with b.c.with_indent():
+            for i, child in enumerate(self.children):
+                b.c.emit(', (' if i > 0 else '(')
+                child.to_cpp(b)
+                b.c.emit(')')
+        b.c.emit(')')
+
 
 class Printf(CallIntrinsic):
     def __init__(self, **kwargs):
@@ -25,7 +35,12 @@ class Printf(CallIntrinsic):
 
 class Print(Node):
     def build_inner(self):
-        fmts = [ self.get_format_str(child) for child in self.children ]
+        fmts = [ self.get_format_str(child, idx) for idx, child in enumerate(self.children) ]
+
+        if not all(fmts):
+            self.fmt_str = ''
+            return
+
         self.fmt_str = ' '.join(fmts)
         self.fmt_str += '\n'
 
@@ -34,11 +49,20 @@ class Print(Node):
             StrLiteral(self.fmt_str), *self.children
         ]))
 
-    def get_format_str(self, node):
+    def get_format_str(self, node, node_idx):
         if isinstance(node.type, NumericType):
             return self.get_numeric_format(node)
         if isinstance(node, StrLiteral):
             return '%s'
+        if isinstance(node.type, UnionType):
+            def print_subtype(subtype_node):
+                clone = self.clone()
+                clone.replace_child(node_idx, subtype_node)
+                return clone
+
+            switch = node.type.generate_switch(print_subtype, node)
+            self.parent.replace_child(self, switch)
+            self.set_rebuild()
         else:
             raise BuildException("No known print format for type: " + repr(node))
 

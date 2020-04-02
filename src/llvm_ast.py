@@ -493,6 +493,12 @@ def compile_instruction_ir(bb, instr: is_op("switch"), scope: dict):
 
 
 @overload
+def compile_instruction_ir(bb, instr: is_op("instr_list"), scope: dict):
+    for sub_instr in instr['instrs']:
+        compile_instruction_ir(bb, sub_instr, scope)
+
+
+@overload
 def compile_instruction_ir(bb, instr: is_op("trunc"), scope: dict):
     value = compile_instruction_ir(bb, instr['value'], scope)
     return bb.trunc(value, instr['type'])

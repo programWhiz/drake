@@ -46,6 +46,13 @@ class VarScope(Node):
 
         return { "op": "pass", "comment": self.__class__.__name__ }
 
+    def to_cpp(self, b):
+        for class_tpl in self.class_tpls.values():
+            class_tpl.to_cpp(b)
+
+        for func_inst in self.funcs.values():
+            func_inst.to_cpp(b)
+
     def get_locals(self):
         return self.local_symbols
 
@@ -108,19 +115,27 @@ class VarScope(Node):
         return tpl
 
     def insert_instrs_before(self, node, instrs):
-        idx = self.children.index(node)
-        if not isinstance(instrs, (list, tuple)):
-            instrs = [ instrs ]
-        self.children = self.children[:idx] + instrs + self.children[idx:]
-        for child in self.children:
-            child.parent = self
-        self.set_rebuild()
+        return insert_instrs_before_impl(self, node, instrs)
 
     def insert_instrs_after(self, node, instrs):
-        idx = self.children.index(node)
-        if not isinstance(instrs, (list, tuple)):
-            instrs = [ instrs ]
-        self.children = self.children[:idx+1] + instrs + self.children[idx+1:]
-        for child in self.children:
-            child.parent = self
-        self.set_rebuild()
+        return insert_instrs_after_impl(self, node, instrs)
+
+
+def insert_instrs_before_impl(self, node, instrs):
+    idx = self.children.index(node)
+    if not isinstance(instrs, (list, tuple)):
+        instrs = [ instrs ]
+    self.children = self.children[:idx] + instrs + self.children[idx:]
+    for child in self.children:
+        child.parent = self
+    self.set_rebuild()
+
+
+def insert_instrs_after_impl(self, node, instrs):
+    idx = self.children.index(node)
+    if not isinstance(instrs, (list, tuple)):
+        instrs = [ instrs ]
+    self.children = self.children[:idx+1] + instrs + self.children[idx+1:]
+    for child in self.children:
+        child.parent = self
+    self.set_rebuild()

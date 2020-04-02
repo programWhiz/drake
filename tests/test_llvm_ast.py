@@ -1026,14 +1026,7 @@ def test_switch_stmt():
 
     cfunc_type = CFUNCTYPE(c_int32, c_int32)
 
-    out = [
-        run_ir_code(module, "test_func", cfunc_type, [-1]),
-        run_ir_code(module, "test_func", cfunc_type, [0]),
-        run_ir_code(module, "test_func", cfunc_type, [1]),
-        run_ir_code(module, "test_func", cfunc_type, [2]),
-        run_ir_code(module, "test_func", cfunc_type, [3]),
-        run_ir_code(module, "test_func", cfunc_type, [4]),
-        run_ir_code(module, "test_func", cfunc_type, [-1000]),
-    ]
-
-    assert out == [ 4, 0, 1, 2, 3, 4, 4 ]
+    pairs = [ (-1, 4), (0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (1000, 4), (-1000, 4) ]
+    for x, y in pairs:
+        out = run_ir_code(module, "test_func", cfunc_type, [x])
+        assert out == y

@@ -18,22 +18,22 @@ class BinaryArithOp(ComparisonOp):
 
 class BinaryAdd(BinaryArithOp):
     def __init__(self, **kwargs):
-        super().__init__(arith_op='add', **kwargs)
+        super().__init__(arith_op='add', op='+', **kwargs)
 
 
 class BinarySub(BinaryArithOp):
     def __init__(self, **kwargs):
-        super().__init__(arith_op='sub', **kwargs)
+        super().__init__(arith_op='sub', op='-', **kwargs)
 
 
 class BinaryMul(BinaryArithOp):
     def __init__(self, **kwargs):
-        super().__init__(arith_op='mul', **kwargs)
+        super().__init__(arith_op='mul', op='*', **kwargs)
 
 
 class BinaryDiv(BinaryArithOp):
     def __init__(self, **kwargs):
-        super().__init__(arith_op='div', **kwargs)
+        super().__init__(arith_op='div', op='/', **kwargs)
 
     def get_concrete_op(self, dtype):
         self.type = dtype

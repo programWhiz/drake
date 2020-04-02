@@ -1,3 +1,5 @@
+import json
+
 from .node import Node
 import llvmlite.ir as ll
 
@@ -21,6 +23,9 @@ class Literal(Node):
                  "type": ll_type,
                  "value": ll.Constant(ll_type, self.value) }
 
+    def to_cpp(self, b):
+        b.c.emit(json.dumps(self.value))
+
 
 class StrLiteral(Literal):
     def __repr__(self):
@@ -28,5 +33,3 @@ class StrLiteral(Literal):
 
     def to_ll_ast(self):
         return { 'op': 'const_str', 'value': self.value }
-
-
