@@ -1,7 +1,7 @@
 import json
-
 from .node import Node
 import llvmlite.ir as ll
+from .numeric import BoolType
 
 
 class Literal(Node):
@@ -24,7 +24,10 @@ class Literal(Node):
                  "value": ll.Constant(ll_type, self.value) }
 
     def to_cpp(self, b):
-        b.c.emit(json.dumps(self.value))
+        if isinstance(self.type, BoolType):
+            b.c.emit('true' if self.value else 'false')
+        else:
+            b.c.emit(json.dumps(self.value))
 
 
 class StrLiteral(Literal):
