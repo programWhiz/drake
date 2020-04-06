@@ -93,3 +93,7 @@ class InvalidTypeError(BuildException):
 
 class InvalidAssignError(BuildException):
     pass
+
+
+class DuplicateFieldException(BuildException):
+    pass

@@ -1,5 +1,0 @@
-from a import A
-from b import *
-import c as C
-from c import c2 as c2_alias
-from d.e.f import g as G, g2 as G2

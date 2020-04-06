@@ -1,0 +1,39 @@
+native import "stdio.h"
+
+fn _print(x : int16):
+    printf("%s", x)
+
+fn _print(x : uint16):
+    printf("%us", x)
+
+fn _print(x : int32):
+    printf("%d", x)
+
+fn _print(x : uint32):
+    printf("%ud", x)
+
+fn _print(x : int64):
+    printf("%ld", x)
+
+fn _print(x : uint64):
+    printf("%uld", x)
+
+fn _print(x : float32):
+    print("%f", float64(x))
+
+fn _print(x : float64):
+    printf("%f", x)
+
+fn _print(x : bool):
+    s = "true" if x else "false"
+    printf("%s", s)
+
+fn _print(x : str):
+    printf("%s", s)
+
+fn _print(x : Object):
+    printf("%s", repr(x))
+
+fn print(*args):
+    for arg in args:
+        _print(arg)

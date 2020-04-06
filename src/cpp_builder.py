@@ -1,7 +1,7 @@
 import os
 import re
 from pathlib import Path
-from src.llvm_utils import run_cli_cmd
+from src.os_utils import run_cli_cmd
 from typing import List
 
 
@@ -82,7 +82,7 @@ class Emitter:
         self.indent_str = ' ' * self.indent_count
 
     def emit(self, text):
-        if self.next_write_indents:
+        if self.next_write_indents or text.startswith('\n'):
             self.fptr.write(self.indent_str)
             self.next_write_indents = False
 

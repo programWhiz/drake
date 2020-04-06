@@ -1,5 +1,5 @@
 from .variable import DefVar, BareName
-from .cast import SubsumeType, CastType
+from .cast import SubsumeType, CastType, AssignUnion
 from .class_def import ClassInst, GetAttr, SetAttr
 from .binary_op import BinaryOp
 from src.exceptions import *
@@ -13,6 +13,7 @@ class Assign(BinaryOp):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.assign_union = False
+        self.old_left_node = None
 
     def build_inner(self):
         left, right = self.children[0:2]
@@ -48,8 +49,10 @@ class Assign(BinaryOp):
 
         # If the left is fixed type, can we adjust right to match it?
         elif left.var.fixed_type:
+            new_left = None
             if ltype.subsumes(rtype):
                 new_right = SubsumeType(type=ltype, children=[ right ])
+                new_left = AssignUnion(type=ltype, rtype=rtype, children=[ left ])
             elif rtype.can_cast_to(ltype):
                 cast_op = rtype.get_cast_op(ltype)
                 new_right = CastType(type=ltype, children=[right], cast_op=cast_op)
@@ -59,10 +62,21 @@ class Assign(BinaryOp):
 
             self.type = ltype
             self.replace_child(right, new_right)
+            if new_left:
+                self.old_left_node = left
+                self.replace_child(left, new_left)
 
         else:  # left is not fixed type, just overwrite var with new type
             self.type = rtype
+            self.old_left_node = left
             self.replace_child(left, DefVar(left.var.name, implicit=True, type=rtype, parent=self))
+
+    def recursive_rebuild(self):
+        if self.old_left_node:
+            self.children[0] = self.old_left_node
+            self.old_left_node = None
+        super().recursive_rebuild()
+
 
     def to_cpp(self, b):
         self.children[0].to_cpp(b)

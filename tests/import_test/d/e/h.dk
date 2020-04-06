@@ -1,5 +1,0 @@
-def h1():
-    pass
-
-def h2(foo, bar):
-    return foo + bar

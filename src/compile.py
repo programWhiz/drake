@@ -1,6 +1,8 @@
 import os
 import re
 import shutil
+
+from src import hl_ast
 from src.code_graph import Program, Module, build_code_graph
 from src.cpp import ast_to_cpp
 from src.error_listener import DrakeErrorListener
@@ -12,8 +14,8 @@ from src.grammar.DrakeParser import DrakeParser, CommonTokenStream
 
 def compile_file(path:str):
     print("Parsing file", path)
-    print_lexer_debug(path, FileStream(path))
-    return compile_stream(path, FileStream(path))
+    print_lexer_debug(path, FileStream(path, encoding='utf-8'))
+    return compile_stream(path, FileStream(path, encoding='utf-8'))
 
 
 def compile_string(source:str):
@@ -72,21 +74,22 @@ def compiler_test(test_name="factorial"):
     cur_module_name = ".".join(cur_module_name_list)
 
     cur_module = Module()
+    cur_module.name = '__main__'
     cur_module.abs_path = os.path.abspath(source_dir)
     cur_module.abs_name = cur_module_name
     cur_module.ast = ast
     cur_module.ast_node = ast
+    cur_module.hl_module = hl_ast.Module(
+        is_main=True, name=cur_module.name)
 
     program = Program()
     program.search_paths = search_paths
     program.build_dir = os.path.join(source_dir, "build")
     os.makedirs(program.build_dir, exist_ok=True)
-    program.modules["__main__"] = cur_module
+    program.modules[module.name] = cur_module
     program.modules[cur_module.abs_name] = cur_module
 
     cur_module.program = program
-
-    graph = build_code_graph(cur_module)
     return
 
     cpp_code = ast_to_cpp(ast, cur_module_name_list, source_path)

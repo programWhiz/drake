@@ -64,6 +64,17 @@ def test_if_else_diff_types():
         DefVar('x'),
         # x = 0 ? 5 : 3.1415
         IfStmt(children=[
+            Literal(1, type=BoolType()),
+            InstrList(children=[
+                Assign(children=[BareName('x'), Literal(value=5, type=int32)]),
+            ]),
+            InstrList(children=[
+                Assign(children=[BareName('x'), Literal(value=3.1415, type=float32)]),
+            ])
+        ]),
+        Print(children=[BareName('x')]),
+        # x = 1 ? 5 : 3.1415
+        IfStmt(children=[
             Literal(0, type=BoolType()),
             InstrList(children=[
                 Assign(children=[BareName('x'), Literal(value=5, type=int32)]),
@@ -73,19 +84,8 @@ def test_if_else_diff_types():
             ])
         ]),
         Print(children=[BareName('x')]),
-        # # x = 1 ? 5 : 3.1415
-        # IfStmt(children=[
-        #     Literal(0, type=BoolType()),
-        #     InstrList(children=[
-        #         Assign(children=[BareName('x'), Literal(value=5, type=int32)]),
-        #     ]),
-        #     InstrList(children=[
-        #         Assign(children=[BareName('x'), Literal(value=3.1415, type=float32)]),
-        #     ])
-        # ]),
-        # Print(children=[BareName('x')]),
     ])
 
     out = get_test_stdout(module).split('\n')
     assert int(out[0]) == 5
-    assert int(out[1]) == 3.1415
+    assert float(out[1]) == 3.1415

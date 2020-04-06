@@ -1,4 +1,0 @@
-x = 3
-y = [ 1, 2, 3 ]
-dd_str = "this is a string" if x < 4 else "foo"
-dd_int1, dd_int2, *_ = 3, 4, 4, 6

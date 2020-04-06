@@ -816,6 +816,7 @@ class DrakeLexer(Lexer):
     def NEWLINE_action(self, localctx:RuleContext , actionIndex:int):
         if actionIndex == 0:
 
+
             tempt = Lexer.text.fget(self)
             newLine = re.sub("[^\r\n\f]+", "", tempt)
             spaces = re.sub("[\r\n\f]+", "", tempt)
@@ -846,10 +847,10 @@ class DrakeLexer(Lexer):
                     self.skip()
                 elif indent > previous:
                     self.indents.append(indent)
-                    self.emitToken(self.commonToken(LanguageParser.INDENT, spaces))
+                    # self.emitToken(self.commonToken(LanguageParser.INDENT, spaces))
                 else:
                     while self.indents and self.indents[-1] > indent:
-                        self.emitToken(self.createDedent())
+                        # self.emitToken(self.createDedent())
                         self.indents.pop()
                 
      

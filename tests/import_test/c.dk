@@ -1,7 +1,0 @@
-from .b import b1, b3
-
-# class c1:
-#     value = 3
-
-# fn c2():
-#     print("foo")

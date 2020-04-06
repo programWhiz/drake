@@ -22,6 +22,7 @@ class VarScope(Node):
         self.classes = classes or OrderedDict()
         self.class_tpls = class_tpls or OrderedDict()
         self.dead_refs = defaultdict(list)
+        self.union_types = OrderedDict()
 
     def __repr__(self):
         cls = self.__class__.__name__
@@ -34,6 +35,7 @@ class VarScope(Node):
         self.local_symbols = dict()
         self.global_symbols = dict()
         self.dead_refs = defaultdict(list)
+        self.union_types = OrderedDict()
 
     def to_ll_ast(self):
         module = self.get_enclosing_module(search_self=True)
@@ -47,17 +49,20 @@ class VarScope(Node):
         return { "op": "pass", "comment": self.__class__.__name__ }
 
     def to_cpp(self, b):
+        for union in self.union_types.values():
+            union.to_cpp_class(b)
+
         for class_tpl in self.class_tpls.values():
             class_tpl.to_cpp(b)
 
         for func_inst in self.funcs.values():
             func_inst.to_cpp(b)
 
-    def get_locals(self):
-        return self.local_symbols
+    def get_local_symbol(self, name):
+        return self.local_symbols.get(name)
 
-    def get_globals(self):
-        return self.global_symbols
+    def get_global_symbol(self, name):
+        return self.global_symbols.get(name)
 
     def put_scoped_var(self, var:Variable):
         if var.name in self.local_symbols:
@@ -102,17 +107,29 @@ class VarScope(Node):
 
     def get_class_template(self, class_def, bind_fields):
         name = class_def.get_fully_scoped_name()
-        fields = ','.join(field.type.shortname() for field in bind_fields)
+        # NOTE: fields is a superset of all fields in all superclasses
+        fields = ','.join(field.type.shortname() for field in bind_fields.values())
         key = f"{name}<{fields}>" if fields else name
 
         existing = self.class_tpls.get(key)
         if existing:
             return existing
 
+        parent_tpls = []
+        for parent in class_def.parent_cls:
+            parent_fields = parent.select_fields_subset(bind_fields)
+            parent_tpl = self.get_class_template(parent, parent_fields)
+            parent_tpls.append(parent_tpl)
+
         from .class_def import ClassTemplate
-        tpl = ClassTemplate(name=key, class_def=class_def, bind_fields=bind_fields)
+        tpl = ClassTemplate(name=key, class_def=class_def, bind_fields=bind_fields, parent_tpls=parent_tpls)
         self.class_tpls[key] = tpl
         return tpl
+
+    def register_union_type(self, union):
+        key = union.shortname()
+        if key not in self.union_types:
+            self.union_types[key] = union
 
     def insert_instrs_before(self, node, instrs):
         return insert_instrs_before_impl(self, node, instrs)

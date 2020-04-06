@@ -9,11 +9,11 @@ from .type import Type, VoidType
 from .union import UnionType
 import llvmlite.ir as ll
 from src.exceptions import *
-from ..llvm_ast import next_id, next_tmp_name
+from ..id_utils import next_id, next_tmp_name
 from .binding import BindInst
 from src.exceptions import *
 from .cast import CastType, SubsumeType
-from .class_def import ClassDef, ClassInst, ClassTemplate, AllocClassInst, GetAttr, GetAttrField
+from .class_def import *
 
 
 class FuncType(Type):
@@ -103,7 +103,9 @@ class FuncDefArg:
 
 
 class FuncDef(VarScope):
-    def __init__(self, func_args=None, **kwargs):
+    clone_attrs = [ 'is_cls_inst_method' ]
+
+    def __init__(self, func_args=None, is_cls_inst_method=False, **kwargs):
         super().__init__(**kwargs)
         self.func_args:List[FuncDefArg] = func_args or []
         for i, arg in enumerate(self.func_args):
@@ -115,13 +117,29 @@ class FuncDef(VarScope):
         self.is_built_def = False
         self.did_define_var = False
 
+        self.is_cls_inst_method = is_cls_inst_method
+
     def __repr__(self):
         args = ', '.join(repr(arg) for arg in self.func_args)
         return f'FuncDef({self.name}, [{args}])'
 
+    def get_local_symbol(self, name):
+        if name == 'me':
+            return self.cls_inst
+        return super().get_local_symbol(name)
+
+    def put_scoped_var(self, var):
+        if var.name == 'me':
+            raise ReservedSymbolError()
+
     def clone(self):
         clone = super().clone()
         clone.func_args = [ arg.clone() for arg in self.func_args ]
+
+        for ret in self.return_nodes:
+            path = self.get_path_to_node(ret)
+            clone.return_nodes.append(clone.get_node_at_path(path))
+
         return clone
 
     def before_build(self):
@@ -502,6 +520,13 @@ class Invoke(Node):
         if isinstance(symbol, FuncDef):
             self.invoke_as_func(symbol)
 
+        elif isinstance(symbol, GetAttr):
+            func_def = symbol.inst_method
+            if isinstance(func_def, FuncDef):
+                self.invoke_as_func(func_def)
+            elif isinstance(func_def, FuncOverload):
+                self.invoke_as_overload(func_def)
+
         elif isinstance(symbol.var, FuncDef):
             self.invoke_as_func(symbol.var)
 
@@ -528,39 +553,17 @@ class Invoke(Node):
         self.invoke_as_func(func_def, args_dict)
 
     def invoke_as_class_def(self, class_def:ClassDef):
-        # Store the new class instance in a temporary variable e.g. tmp123
-        tmp_var = next_tmp_name()
-
         # We know arg[0] is ClassDef, keep all other args for ctor invoke
         ctor_args = [ child.clone() for child in self.children[1:] ]
-        # The first arg will be class inst, shift all other args +1 to the right
-        for arg in ctor_args:
-            arg.shift_index(1)
 
-        from .assign import Assign
-
-        # Now assign new class instance to the temp var,
-        # and invoke the constructor on the temp var
-        self.parent.insert_instrs_before(self, [
-            DefVar(tmp_var),
-
-            # tmp_inst = MyClass()
-            Assign(children=[
-                BareName(tmp_var),
-                AllocClassInst(children=[
-                    ClassInst(class_def=class_def)
-                ])
-            ]),
-            # constructor(tmp_inst, *args)
-            Invoke(children=[
-                class_def.default_ctor,
-                InvokeArg(index=0, name='me', value=BareName(tmp_var)),
-                *ctor_args ])
+        alloc_stmt = AllocClassInst(children=[
+            ClassInst(class_def=class_def),
+            CtorArgs(children=ctor_args)
         ])
 
         # No longer need this invocation, replace with reference
         # to read pointer in the temp var
-        self.parent.replace_child(self, BareName(tmp_var))
+        self.parent.replace_child(self, alloc_stmt)
 
 
     def args_to_dict(self) -> OrderedDict:

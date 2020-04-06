@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import List, Dict
 from .node import Node
 from .assign import Assign
@@ -22,53 +23,60 @@ class ConditionalStmt(Node):
         super().set_rebuild()
 
     def assign_union_types(self):
-        return
-        true_asmts:List[Assign] = []
-        self.children[1].find_children_with_class(Assign, out=true_asmts)
+        # Gather up the list of variable names, and their respective assignment
+        # statements in each branch.  Due to Dict nature, only the last assignment
+        # of each variable in each branch is in the list.
+        branch_asmts:List[Dict[str, Assign]] = []
+        for child in self.children[1:]:
+            asmts = child.find_children_with_class(Assign)
+            asmts = { ass.children[0].var.name: ass for ass in asmts }
+            branch_asmts.append(asmts)
 
-        false_asmts:List[Assign] = []
-        self.children[2].find_children_with_class(Assign, out=false_asmts)
+        if not any(branch_asmts):
+            return  # early exit
 
-        # Keep the last assignment by name in both branches, keyed by name
-        true_asmts:Dict[str, Assign] = { ass.children[0].var.name: ass for ass in true_asmts }
-        false_asmts:Dict[str, Assign] = { ass.children[0].var.name: ass for ass in false_asmts }
-        common_names = set(true_asmts.keys()) & set(false_asmts.keys())
+        # Track how many branches each assignment is in
+        assign_counts = Counter()
+        for asmt in branch_asmts:
+            assign_counts.update(asmt.keys())
 
-        # Keep only common assignments from both branches
-        true_asmts:Dict[str, Assign] = { name: ass for name, ass in true_asmts.items() if name in common_names }
-        false_asmts:Dict[str, Assign] = { name: ass for name, ass in false_asmts.items() if name in common_names }
+        # Keep only assignments that are present in at least two branches
+        common_names = [ key for key, count in assign_counts.items() if count >= 2 ]
+        if not common_names:
+            return   # early exit
 
-        do_rebuild = False
-        for name, true_asmt in true_asmts.items():
-            false_asmt = false_asmts[name]
-            true_type, false_type = true_asmt.type, false_asmt.type
-            # If both assigned types match, then we don't care, this
-            # doesn't cause a conditional type difference
-            if false_type.equivalent(true_type):
-                continue
+        for varname, count in assign_counts.items():
+            if count < 2:
+                for asmt in branch_asmts:
+                    asmt.pop(varname)
 
-            # If types don't agree, then we must assign a Union type here
-            union = UnionType.make_union(true_type, false_type)
+        create_unions = []
+        for name in common_names:
+            all_asmts = [ asmt[name] for asmt in branch_asmts if asmt.get(name) ]
+
+            union = None
+            for asmt in all_asmts:
+                union = UnionType.make_union(union, asmt.type)
             union.is_fixed = True
 
-            # Now prior to both assignment instructions, insert the Union instruction
-            for asmt in (true_asmt, false_asmt):
-                if asmt.type.equivalent(union):
-                    continue
-                do_rebuild = True
+            # If any of the branches would change type, create the union before all branches
+            if any(not asmt.type.equivalent(union) for asmt in all_asmts):
+                create_unions.append((name, union))
 
-                # Replace left variable type with new type
-                lvalue = asmt.children[0]
-                union_var = DefVar(name, implicit=True, type=union, fixed_type=True)
-                asmt.replace_child(lvalue, union_var)
+        # Will only rebuild if some of the statements changed types
+        for (name, union) in create_unions:
+            def_var = DefVar(name, implicit=True, type=union, fixed_type=True)
+            self.parent.insert_instrs_before(self, [ def_var ])
 
-        if do_rebuild:
+            self.get_enclosing_module().register_union_type(union)
+
+        if create_unions:
             self.recursive_rebuild()
 
     def force_cond_to_bool(self, cond):
         if isinstance(cond.type, NumericType):
             # Cast non-boolean numerics by comparing with zero type
-            if not (cond.type.is_bool and cond.type.precision == 1):
+            if not cond.type.is_bool:
                 self.replace_child(cond, NotEqualTo(children=[
                     cond, Literal(0, type=cond.type)
                 ]))

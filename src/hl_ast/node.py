@@ -44,11 +44,11 @@ class Node:
     def to_cpp(self, b:CPPBuilder):
         raise NotImplementedError(f"to_cpp not enabled for node of type: {self}")
 
-    def get_locals(self):
-        return self.get_enclosing_scope().get_locals()
+    def get_local_symbol(self, name):
+        return self.get_enclosing_scope().get_local_symbol(name)
 
-    def get_globals(self):
-        return self.get_enclosing_scope().get_globals()
+    def get_global_symbol(self, name):
+        return self.get_enclosing_scope().get_global_symbol(name)
 
     def clone(self):
         cls = self.__class__
@@ -224,3 +224,29 @@ class Node:
 
     def is_conditional(self):
         return False
+
+    def get_path_to_node(self, child):
+        if child == self:
+            return []
+
+        path = []
+        while True:
+            parent = child.parent
+            path.append(parent.children.index(child))
+
+            if parent is None:
+                raise Exception(f"No path from node {child} to {self}")
+
+            if parent == self:
+                path.reverse()
+                return path
+
+            child = parent
+
+    def get_node_at_path(self, path):
+        if not path: return self;
+
+        node = self
+        for idx in path:
+            node = node.children[idx]
+        return node

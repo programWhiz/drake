@@ -1,3 +1,0 @@
-from .f import *
-from .g import *
-from .h import *

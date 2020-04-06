@@ -1,11 +1,9 @@
 import sys
 from pathlib import Path
 from src.exceptions import *
-from src.inter_compile import IntermediateCompiler
 from src.module_search import find_module_imports, find_symbol_imports, ast_node_text
 from src.grammar.DrakeParser import DrakeParser as DP
 from src.code_graph_types import *
-from src.resolve_graph import resolve_code_graph
 from src.ast_utils import *
 
 

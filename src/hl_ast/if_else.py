@@ -1,5 +1,6 @@
 from .node import Node
 from .conditional import ConditionalStmt
+from .instr_list import InstrList
 
 
 class IfStmt(ConditionalStmt):
@@ -45,12 +46,23 @@ class Switch(Node):
         is_all_cases = all(isinstance(child, SwitchCase) for child in self.children)
         assert is_all_cases, "Switch only supports SwitchCase child."
 
-    def to_ll_ast(self):
-        return {
-            "op": "switch",
-            "comment": "Switch",
-            "branch": [ child.to_ll_ast() for child in self.children ]
-        }
+    def to_cpp(self, b):
+        for i, case in enumerate(self.children):
+            cond, body = case.children
+
+            if i == 0:
+                b.c.emit('if(')
+            else:
+                b.c.emit('else if(')
+
+            cond.to_cpp(b)
+
+            b.c.emit(') {\n')
+
+            with b.c.with_indent():
+                body.to_cpp(b)
+
+            b.c.emit('}\n')
 
 
 class SwitchCase(ConditionalStmt):
@@ -60,12 +72,3 @@ class SwitchCase(ConditionalStmt):
 
         if not isinstance(body, InstrList):
             self.replace_child(body, InstrList(children=[ body ]))
-
-    def to_ll_ast(self):
-        cond, body = self.children
-        return {
-            "comment": "SwitchCase",
-            "cond": cond.to_ll_ast(),
-            "instrs": body.to_ll_ast()
-        }
-

@@ -1,33 +1,3 @@
-/*
- * The MIT License (MIT)
- *
- * Copyright (c) 2014 by Bart Kiers
- *
- * Permission is hereby granted, free of charge, to any person
- * obtaining a copy of this software and associated documentation
- * files (the "Software"), to deal in the Software without
- * restriction, including without limitation the rights to use,
- * copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following
- * conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
- * OTHER DEALINGS IN THE SOFTWARE.
- *
- * Project      : python3-parser; an ANTLR4 grammar for Python 3
- *                https://github.com/bkiers/python3-parser
- * Developed by : Bart Kiers, bart@big-o.nl
- */
 grammar Drake;
 
 // An ANTLR4 grammar for Python 3, for Python3 target
@@ -156,18 +126,19 @@ decorators: decorator+;
 decorated: decorators (classdef | funcdef | async_funcdef);
 
 async_funcdef: ASYNC funcdef;
-funcdef: 'fn' NAME parameters ('->' test)? ':' suite;
+funcdef: 'fn' NAME parameters ('->' test)? suite;
 
 parameters: '(' (typedargslist)? ')';
 
 typedargslist: typedarg_item (',' typedarg_item)* (',')? ;
 typedarg_item: namedarg | star_args | named_kw_args ;
-star_args: type_qual? '*' NAME ;
-named_kw_args: type_qual? '**' NAME ;
-namedarg: type_qual? NAME ('=' test) ? ;
-type_qual: (CONST)? dotted_name (template_def)? ;
+star_args: '*' NAME type_trailer? ;
+named_kw_args: '**' NAME type_trailer? ;
+namedarg: NAME type_qual ? ('=' test) ? ;
+type_trailer: ':' type_qual;
+type_qual: dotted_name (template_def)? ;
 template_def: '<' (template_args)? '>' ;
-template_args: NAME (',' NAME)* ','?;
+template_args: type_qual (',' type_qual)* ','?;
 
 varargslist: (vfpdef ('=' test)? (',' vfpdef ('=' test)?)* (',' (
         '*' (vfpdef)? (',' vfpdef ('=' test)?)* (',' ('**' vfpdef (',')?)?)?
@@ -179,7 +150,7 @@ vfpdef: NAME;
 
 stmt: simple_stmt | compound_stmt;
 simple_stmt: small_stmt (';' small_stmt)* (';')? NEWLINE;
-small_stmt: (expr_stmt | del_stmt | pass_stmt | flow_stmt |
+small_stmt: (invoke_stmt | expr_stmt | del_stmt | pass_stmt | flow_stmt |
              import_stmt | global_stmt | nonlocal_stmt | assert_stmt);
 expr_stmt: augassign_stmt | assign_stmt;
 assign_stmt: assign_atoms '=' (yield_expr|testlist_star_expr) ;
@@ -225,7 +196,10 @@ with_stmt: 'with' with_item (',' with_item)*  ':' suite;
 with_item: test ('as' expr)?;
 // NB compile.c makes sure that the default except clause is last
 except_clause: 'except' (test ('as' NAME)?)?;
-suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT;
+suite: simple_stmt | OPEN_BRACE stmt+ CLOSE_BRACE;
+
+invoke_stmt: test OPEN_PAREN invoke_args? CLOSE_PAREN;
+invoke_args: test (test ',')* ','?;
 
 test: or_test ('if' or_test 'else' test)? | lambdef;
 test_nocond: or_test | lambdef_nocond;
@@ -253,9 +227,9 @@ arith_expr: term (('+'|'-') term)*;
 term: factor (('*'|'/'|'%'|'//') factor)*;
 factor: ('+'|'-'|'~') factor | power;
 power: atom_expr ('**' factor)?;
-bare_atom_expr: type_qual? bare_name trailer*;
-bare_atom_star_expr: type_qual? '*' bare_name trailer*;
-atom_expr: (AWAIT)? type_qual? atom trailer*;
+bare_atom_expr: bare_name type_trailer? trailer*;
+bare_atom_star_expr: '*' bare_name type_trailer? trailer*;
+atom_expr: (AWAIT)? atom type_trailer? trailer*;
 atom: atom_gen_expr | atom_list_expr | atom_dict_expr | bare_name | literal | ellipsis;
 atom_gen_expr: '(' (yield_expr|testlist_comp)? ')' ;
 atom_dict_expr: '{' (dict_maker | set_maker)? '}' ;
@@ -374,6 +348,7 @@ NEWLINE
    | ( '\r'? '\n' | '\r' | '\f' ) SPACES?
    )
    {
+
 tempt = Lexer.text.fget(self)
 newLine = re.sub("[^\r\n\f]+", "", tempt)
 spaces = re.sub("[\r\n\f]+", "", tempt)
@@ -404,10 +379,10 @@ else:
         self.skip()
     elif indent > previous:
         self.indents.append(indent)
-        self.emitToken(self.commonToken(LanguageParser.INDENT, spaces))
+        # self.emitToken(self.commonToken(LanguageParser.INDENT, spaces))
     else:
         while self.indents and self.indents[-1] > indent:
-            self.emitToken(self.createDedent())
+            # self.emitToken(self.createDedent())
             self.indents.pop()
     }
  ;

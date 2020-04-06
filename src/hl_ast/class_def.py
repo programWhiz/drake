@@ -2,25 +2,59 @@ import re
 from abc import ABC
 from collections import OrderedDict
 from typing import List
-
-from .type import Type, TypePtr
+from .type import Type
 from .numeric import NumericType
 from .var_scope import VarScope
-from .variable import BareName, FuncParamVariable, Variable
+from .variable import FuncParamVariable
 from .node import Node
-from ..llvm_ast import next_id, next_tmp_name
+from ..id_utils import next_id, next_tmp_name
 from src.exceptions import *
 
 
 class ClassDef(VarScope):
-    clone_attrs = [ 'fields' ]
+    clone_attrs = [ 'fields', 'parent_cls' ]
 
-    def __init__(self, fields:OrderedDict=None, **kwargs):
+    def __init__(self, fields:OrderedDict=None, parent_cls:List['ClassDef'] = None, **kwargs):
         super().__init__(**kwargs)
         assert fields is None or isinstance(fields, OrderedDict), "ClassDef `fields` must be ordered dict."
         self.fields = fields if fields else OrderedDict()
         self.instance_methods = {}
         self.default_ctor = None
+        self.parent_cls = parent_cls or []
+
+    def clone(self):
+        clone = super().clone()
+        for key, func in self.instance_methods.items():
+            rel_path = self.get_path_to_node(func)
+            clone_func = clone.get_node_at_path(rel_path)
+            clone.instance_methods[key] = clone_func
+
+        return clone
+
+    def get_local_symbol(self, name):
+        if name == 'me':
+            return self
+        return super().get_local_symbol(name)
+
+    def get_inherited_fields(self):
+        fields = OrderedDict()
+        for cls in self.parent_cls:
+            for key, value in cls.fields.items():
+                if key in fields:
+                    raise DuplicateFieldException(
+                        f"Class {self.name} field {key} collides in multiple parent classes.")
+                fields[key] = value
+
+        for key, value in self.fields.items():
+            if key in fields:
+                raise DuplicateFieldException(
+                    f"Class {self.name} field {key} is already defined in a parent class.")
+            fields[key] = value
+        return fields
+
+    def select_fields_subset(self, bind_fields):
+        all_fields = self.get_inherited_fields()
+        return OrderedDict((key, bind_fields[key]) for key in all_fields.keys())
 
     def build_inner(self):
         # Create a local variable of class name, so we can refer to the class by name
@@ -29,45 +63,22 @@ class ClassDef(VarScope):
         # Build the default ctor
         self.build_ctor()
 
+    def put_scoped_var(self, var):
+        from .func_def import FuncDef
+        if isinstance(var, FuncDef):
+            self.instance_methods[var.name] = var
+        else:
+            super().put_scoped_var(var)
+
     def build_ctor(self) -> "FuncDef":
-        if self.default_ctor:
-            return
-
-        from .func_def import FuncDef, FuncDefArg
-        class_inst = ClassInst(class_def=self)
-        ctor_name = self.get_fully_scoped_name() + '.ctor'
-        args = [ FuncDefArg(name='me', index=0, dtype=class_inst) ]
-        args.extend(
-            FuncDefArg(
-                name=field.name,
-                index=index,
-                dtype=field.type or field.default_value.type,
-                default_val=field.default_value)
-            for index, field in enumerate(self.fields.values(), 1))
-
-        # Ctor just sets each field from the ctor args
-        # Create instructions: me.x = x; me.y = y; ...
-        ctor_body = []
-        for field, ctor_arg in zip(self.fields.values(), args[1:]):
-            get_field = GetAttr(children=[BareName('me'), GetAttrField(field.name)])
-            arg_var = FuncParamVariable(func_arg=ctor_arg)
-            setter = SetAttr(children=[ get_field, arg_var ])
-            ctor_body.append(setter)
-
-        self.default_ctor = FuncDef(name=ctor_name, func_args=args, children=ctor_body)
-
-        self.instance_methods['ctor'] = self.default_ctor
-
-        # Insert this into the parent module
-        self.parent.insert_instrs_after(self, self.default_ctor)
-        return self.default_ctor
+        pass
 
     def get_dtor(self) -> "FuncDef":
         from .func_def import FuncDef
         dtor_name = self.get_fully_scoped_name() + '.dtor'
         return FuncDef(name=dtor_name, func_args=[])
 
-    def get_instance_method(self, name):
+    def get_inst_method(self, name):
         return self.instance_methods.get(name)
 
 
@@ -88,12 +99,13 @@ class ClassField:
 
 
 class ClassTemplate:
-    def __init__(self, name, class_def:ClassDef, bind_fields:List, **kwargs):
+    def __init__(self, name, class_def:ClassDef, bind_fields:List, parent_tpls:List['ClassTemplate'], **kwargs):
         super().__init__(**kwargs)
         self.name = name
         self.class_def = class_def
         self.class_id = hash(name)
         self.bind_fields = bind_fields
+        self.parent_tpls = parent_tpls
 
     def cpp_name(self):
         return re.sub(r'\W', '_', self.name)
@@ -117,12 +129,19 @@ class ClassTemplate:
         }
 
     def to_cpp(self, b):
-        b.h.emit(f"""\nclass {self.cpp_name()} {{\n
+        supers = [ tpl.cpp_name() for tpl in self.parent_tpls ]
+        supers = ','.join(f'public {cls}' for cls in supers)
+        if supers:
+            supers = ' : ' + supers
+
+        cls_name = self.cpp_name()
+
+        b.h.emit(f"""\nclass {cls_name}{supers} {{\n
         public:\n""")
 
         with b.h.with_indent():
-            for i, name in enumerate(self.class_def.fields.keys()):
-                dtype = self.bind_fields[i].type.cpp_type()
+            for name in self.class_def.fields.keys():
+                dtype = self.bind_fields[name].type.cpp_type()
                 b.h.emit(f"{dtype} {name};\n")
 
         b.h.emit('\n};\n')
@@ -132,7 +151,7 @@ class ClassInst(Node):
     def __init__(self, class_def:ClassDef, **kwargs):
         super().__init__(**kwargs)
         self.class_def = class_def.clone()
-        self.bind_fields = OrderedDict(class_def.fields)
+        self.bind_fields = class_def.get_inherited_fields()
         self.ptr_id = next_id()
         self.cpp_var_name = f'ptr_{self.ptr_id}'
 
@@ -156,7 +175,7 @@ class ClassInst(Node):
         )
 
     def get_inst_method(self, func_name):
-        return self.class_def.instance_methods.get(func_name)
+        return self.class_def.get_inst_method(func_name)
 
     def get_field_index(self, field_name):
         for i, key in enumerate(self.bind_fields.keys()):
@@ -177,8 +196,7 @@ class ClassInst(Node):
 
     def get_class_template(self):
         scope = self.get_enclosing_module()
-        bind_fields = list(self.class_def.fields.values())
-        return scope.get_class_template(self.class_def, bind_fields)
+        return scope.get_class_template(self.class_def, self.bind_fields)
 
     def ll_type(self):
         return self.get_class_template().ll_ref()
@@ -206,6 +224,10 @@ class ClassInst(Node):
         b.c.emit(self.cpp_var_name)
 
 
+class CtorArgs(Node):
+    def to_cpp(self, b, class_inst):
+        raise NotImplementedError()
+
 class StackAllocClassInst(Node):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -225,11 +247,18 @@ class StackAllocClassInst(Node):
             "type": ll_ref['type'] }
 
     def to_cpp(self, b):
-        class_inst = self.children[0]
+        class_inst, ctor_args = self.children[0], self.children[1]
         class_name = class_inst.cpp_type()
         tmp = next_tmp_name()
         class_no_ptr = class_name[:-1]
-        b.c.emit(f'{class_no_ptr} {tmp};\n')
+
+        # Invoke the constructor and assign to temp var on stack
+        b.c.emit(f'{class_no_ptr} {tmp} = {class_no_ptr}(')
+        # TODO: implement constructor call here
+        # ctor_args.to_cpp(b, class_inst)
+        b.c.emit(');\n')
+
+        # Assign to the named variable using pointer
         b.c.emit(f'{class_name} {class_inst.cpp_var_name} = &{tmp};\n')
 
 
@@ -254,12 +283,15 @@ class DerefClassPtr(Node):
 
 class AllocClassInst(Node):
     def build_inner(self):
-        self.type = self.children[0]
-        class_inst = self.children[0]
-        stack_alloc = StackAllocClassInst(children=[ class_inst ])
+        class_inst, ctor_args = self.children
+        self.type = class_inst
+
+        stack_alloc = StackAllocClassInst(children=[ class_inst, ctor_args ])
         ptr_deref = DerefClassPtr(children=[ class_inst ])
+
         self.insert_instrs_before(self, stack_alloc)
         self.parent.replace_child(self, [ ptr_deref ])
+
         self.is_built = True  # don't build again
 
 
@@ -297,6 +329,7 @@ class GetAttr(Node):
         super().__init__(**kwargs)
         self.field_idx = field_idx
         self.field_name = field_name
+        self.inst_method = None
 
     def build_inner(self):
         var, attr_field = self.children
@@ -320,11 +353,14 @@ class GetAttr(Node):
         assert isinstance(cls_inst, ClassInst), ('Got non-class var in GetAttr:' + repr(cls_inst))
 
         self.field_idx = cls_inst.get_field_index(self.field_name)
-        if self.field_idx < 0:
-            cls_name = cls_inst.name
-            raise InvalidAttributeError(f"Class {cls_name} has no attribute {self.field_name}")
+        if self.field_idx >= 0:
+            self.type = cls_inst.get_field_type(self.field_name)
 
-        self.type = cls_inst.get_field_type(self.field_name)
+        else:  # No such field, maybe method?
+            self.inst_method = cls_inst.get_inst_method(self.field_name)
+            if not self.inst_method:
+                cls_name = cls_inst.name
+                raise InvalidAttributeError(f"Class {cls_name} has no attribute {self.field_name}")
 
     def __repr__(self):
         child = repr(self.children[0])
@@ -340,7 +376,13 @@ class GetAttr(Node):
         else:
             raise Exception(f"Unsupported child node type for GetAttr: {repr(child)}")
 
-        b.c.emit(f'{varname}->{self.field_name}')
+        b.c.emit(f'{varname}->')
+
+        if self.inst_method:
+            self.inst_method.to_cpp(b)
+        else:
+            b.c.emit(self.field_name)
+
 
     def to_ll_ast(self):
         child = self.children[0]

@@ -1,5 +1,5 @@
 from src.exceptions import *
-from src.llvm_ast import next_id
+from src.id_utils import next_id
 from .node import Node
 from ..warnings import Warnings
 from .union import UnionType
@@ -96,7 +96,7 @@ class BareName(Node):
         self.var:Variable = None
 
     def build_inner(self):
-        self.var = self.get_locals().get(self.name)
+        self.var = self.get_local_symbol(self.name)
         if not self.var:
             raise UndefinedVariableError(f'Undefined symbol {self.name}')
 

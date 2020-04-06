@@ -1,5 +1,7 @@
+import inspect
+
 import llvmlite.ir as ll
-from src.llvm_ast import next_id
+from src.id_utils import next_id
 from .var_scope import VarScope
 from ..cpp_builder import CPPBuilder
 
@@ -50,29 +52,34 @@ class Module(VarScope):
 
         super().to_cpp(b)
 
-        b.c.emit(f"void module_init_{self.name}_inner() {{\n")
+        b.c.emit(f"\nvoid module_init_{self.name}_inner() {{\n")
         with b.c.with_indent():
             for child in self.children:
                 child.to_cpp(b)
                 b.c.emit(';\n')
-        b.c.emit(f"}}\n\n")
+        b.c.emit(f"}}\n")
 
-        b.h.emit(f"void module_init_{self.name}();")
-        b.c.emit(f"""
+        b.h.emit(f"\nvoid module_init_{self.name}();\n")
+
+        b.c.emit('\n')
+        b.c.emit(inspect.cleandoc(f"""
         void module_init_{self.name}() {{
             static bool is_init = false;
             if (!is_init) {{ 
                 is_init = true;
                 module_init_{self.name}_inner();
             }}
-        }}\n\n""")
+        }}"""))
+        b.c.emit('\n\n')
 
         # Call init from main method if this module is main
         if self.is_main:
-            b.c.emit(f"""int main(int argc, char** argv) {{
-                module_init_{self.name}();
-                return 0;
-            }}\n\n""")
+            b.c.emit(inspect.cleandoc(f"""
+                int main(int argc, char** argv) {{
+                    module_init_{self.name}();
+                    return 0;
+                }}"""))
+            b.c.emit('\n\n')
 
 
 def main_method_ll_ast(entry_func_id):

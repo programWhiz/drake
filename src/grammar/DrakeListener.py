@@ -134,6 +134,15 @@ class DrakeListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by DrakeParser#type_trailer.
+    def enterType_trailer(self, ctx:DrakeParser.Type_trailerContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#type_trailer.
+    def exitType_trailer(self, ctx:DrakeParser.Type_trailerContext):
+        pass
+
+
     # Enter a parse tree produced by DrakeParser#type_qual.
     def enterType_qual(self, ctx:DrakeParser.Type_qualContext):
         pass
@@ -545,6 +554,24 @@ class DrakeListener(ParseTreeListener):
 
     # Exit a parse tree produced by DrakeParser#suite.
     def exitSuite(self, ctx:DrakeParser.SuiteContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#invoke_stmt.
+    def enterInvoke_stmt(self, ctx:DrakeParser.Invoke_stmtContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#invoke_stmt.
+    def exitInvoke_stmt(self, ctx:DrakeParser.Invoke_stmtContext):
+        pass
+
+
+    # Enter a parse tree produced by DrakeParser#invoke_args.
+    def enterInvoke_args(self, ctx:DrakeParser.Invoke_argsContext):
+        pass
+
+    # Exit a parse tree produced by DrakeParser#invoke_args.
+    def exitInvoke_args(self, ctx:DrakeParser.Invoke_argsContext):
         pass
 
 

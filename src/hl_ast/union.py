@@ -1,9 +1,10 @@
+import re
 from collections import OrderedDict
 from src.exceptions import *
 from .type import Type
 from .node import Node
 from .numeric import NumericType, BoolType
-from src.llvm_ast import next_id
+from src.id_utils import next_id
 import llvmlite.ir as ll
 
 
@@ -74,13 +75,36 @@ class UnionType(Type):
         x = ','.join(t.longname() for t in self.types)
         return f'Union<{x}>'
 
+    def cpp_name(self):
+        return re.sub(r'\W', '_', self.shortname())
+
+    def cpp_type(self):
+        return self.cpp_name()
+
+    def to_cpp_class(self, b):
+        name = self.cpp_name()
+        union_name = f'Union_{name}'
+
+        b.h.emit(f'\nunion {union_name} {{\n')
+        with b.h.with_indent():
+            for i, type in enumerate(self.types):
+                b.h.emit(f'{type.cpp_type()} x{i};\n')
+        b.h.emit('};\n')
+
+        b.h.emit(f'\nclass {name} {{\n')
+        with b.h.with_indent():
+            b.h.emit('public:\n')
+            b.h.emit(f'int type_idx;\n')
+            b.h.emit(f'{union_name} types;\n')
+        b.h.emit('};\n')
+
     def generate_switch(self, instr_callback, node):
         from .if_else import Switch, SwitchCase
         cases = []
 
         for type_idx, type in enumerate(self.types):
             # Get an altered instruction for the new type
-            case_cond = UnionTypeCheck(type_idx=type_idx)
+            case_cond = UnionTypeCheck(type_idx=type_idx, children=[ node ])
 
             # Clone the node in question, but replace type
             node_with_cast = CastUnionValue(children=[node.clone()], type=type, type_idx=type_idx)
@@ -100,17 +124,10 @@ class CastUnionValue(Node):
         super().__init__(**kwargs)
         self.type_idx = type_idx
 
-    def to_ll_ast(self):
-        # (int*) &union.value
-        return {
-            "op": "cast_ptr",
-            "type": self.type.ll_type(),
-            "ref": {
-                "op": "gep",
-                "ref": self.children[0].ll_ref(),
-                "value": [ 0, 1 ]
-            }
-        }
+    def to_cpp(self, b):
+        b.c.emit('(')
+        self.children[0].to_cpp(b)
+        b.c.emit(f').types.x{self.type_idx}')
 
 
 class UnionInst(Node):
@@ -176,24 +193,8 @@ class UnionTypeCheck(Node):
         self.type_idx = type_idx
         self.type = BoolType()
 
-    def ll_ast_cond(self):
-        child = self.children[0]
-
-        # t = union.type_idx
-        get_type = {
-            "op": "gep",
-            "ref": child.ll_ref(),
-            "value": [0, 0]
-        }
-
-        # Cast type idx into ll.Constant, use same precision as defined class def
-        int_type = ll.IntType(UnionInst.type_idx_bits)
-        type_idx = ll.Constant(int_type, self.type_idx)
-
-        # bool(type_idx == 3)
-        return {
-            "op": "u==",
-            "left": get_type,
-            "right": { "op": "const_val", "value": type_idx }
-        }
+    def to_cpp(self, b):
+        b.c.emit('(')
+        self.children[0].to_cpp(b)
+        b.c.emit(f').type_idx == {self.type_idx}')
 

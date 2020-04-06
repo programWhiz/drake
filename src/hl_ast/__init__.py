@@ -8,6 +8,7 @@ from .instr_list import *
 from .intrinsics import *
 from .if_else import *
 from .literal import *
+from .logic_op import *
 from .loop import *
 from .module import *
 from .node import *
